@@ -1,0 +1,50 @@
+plugins { id 'com.android.application' }
+
+def releaseKeystore = rootProject.file('.signing/paperpdf.jks')
+def releaseStorePassword = System.getenv('PAPERPDF_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('PAPERPDF_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('PAPERPDF_KEY_PASSWORD')
+def hasReleaseSigning = releaseKeystore.exists() && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
+android {
+    namespace 'cn.paperpdf.reader'
+    compileSdk 35
+    buildFeatures { buildConfig true }
+    useLibrary 'android.test.runner'
+    useLibrary 'android.test.base'
+    defaultConfig {
+        applicationId 'cn.paperpdf.reader'
+        minSdk 23
+        targetSdk 35
+        versionCode Integer.parseInt(project.property('appVersionCode').toString())
+        versionName project.property('appVersionName').toString()
+        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+    }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile releaseKeystore
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging { resources.excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/NOTICE'] }
+    lint { abortOnError true }
+}
+dependencies {
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+}

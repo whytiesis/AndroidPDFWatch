@@ -1,0 +1,42 @@
+# Android and Gradle outputs
+.gradle/
+**/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Signing material and local secrets
+.signing/
+*.jks
+*.keystore
+*.p12
+*.pem
+.env
+.env.*
+
+# Local toolchains and downloaded archives
+.tools/
+.downloads/
+
+# Generated packages, logs, temporary files, and test evidence
+delivery/
+test-output/
+tmp/
+docs/verification-*/
+*.apk
+*.aab
+*.idsig
+*.log
+
+# Private project handoff and conversation records
+AGENTS.md
+项目交接.md
+docs/对话与需求记录.md
