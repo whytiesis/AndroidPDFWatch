@@ -2,6 +2,12 @@
 
 原生 Android 本地 PDF 阅读与批注应用，包名 `cn.paperpdf.reader`。
 
+## 下载
+
+[⬇️ 下载最新版 APK（v1.4.0）](https://github.com/whytiesis/AndroidPDFWatch/releases/download/v1.4.0/PaperPDF-1.4.0.apk)
+
+[查看全部历史版本](https://github.com/whytiesis/AndroidPDFWatch/releases)
+
 ## 安装与使用
 
 支持 Android 6.0（API 23）及以上。仓库只保留源码，不提交 APK、发布签名或本地构建产物；可按下文从源码构建并安装。
