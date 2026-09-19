@@ -36,7 +36,8 @@ public class MainActivity extends Activity {
     private ContinuousView continuousView;
     private PdfRenderer renderer;
     private File source,pendingExport;
-    private String name="",sourceUri="",savedModel="";
+    private DraftStore drafts;
+    private String draftId="",name="",sourceUri="",savedModel="",saveStatus="已打开";
     private ArrayList<PdfEngine.Sheet> sheets=new ArrayList<>();
     private final ArrayDeque<String> undo=new ArrayDeque<>(),redo=new ArrayDeque<>();
     private int current,mode,renderGeneration;
@@ -45,13 +46,17 @@ public class MainActivity extends Activity {
     private float readingFraction;
     private boolean fitContent=true;
     private boolean readerChromeVisible=true;
+    private boolean returnToContinuous;
+    private float returnContinuousFraction;
     private File pendingOverwrite;
     private final ArrayList<TextView> modes=new ArrayList<>();
     private Dialog progress;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state); PDFBoxResourceLoader.init(getApplicationContext());
-        source=new File(getFilesDir(),"current.pdf");
+        drafts=new DraftStore(this);
+        draftId=getPreferences(0).getString("active_draft","");
+        source=drafts.exists(draftId)?drafts.pdf(draftId):new File(getFilesDir(),"current.pdf");
         night=getPreferences(0).getBoolean("night",false);
         continuous=getPreferences(0).getBoolean("continuous",false);
         fitContent=getPreferences(0).getBoolean("fit_content",true);
@@ -70,11 +75,11 @@ public class MainActivity extends Activity {
         if(state!=null&&state.getBoolean("viewing")&&source.isFile()) {
             String path=state.getString("pending"); if(path!=null) pendingExport=new File(path);
             restore();
-        } else if(incoming!=null) openUri(incoming,null);
+        } else if(incoming!=null) { if("file".equals(incoming.getScheme())) openUri(incoming,null); else offerImport(incoming); }
     }
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent); setIntent(intent); Uri uri=incoming(intent);
-        if(uri!=null) confirmLeave(()->openUri(uri,null));
+        if(uri!=null) confirmLeave(()->{ if("file".equals(uri.getScheme())) openUri(uri,null); else offerImport(uri); });
     }
     private Uri incoming(Intent intent) {
         if(Intent.ACTION_VIEW.equals(intent.getAction())) return intent.getData();
@@ -183,7 +188,9 @@ public class MainActivity extends Activity {
     }
     private void space(LinearLayout l,int h) { l.addView(new View(this),new LinearLayout.LayoutParams(1,dp(h))); }
     private void home() {
-        capturePosition(); viewing=false; settingsPage=false; settingsFromViewer=false; base();
+        capturePosition();
+        if(returnToContinuous) { continuous=true; returnToContinuous=false; }
+        viewing=false; settingsPage=false; settingsFromViewer=false; base();
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); root.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
         LinearLayout body=vertical(); body.setPadding(dp(24),dp(26),dp(24),dp(24)); scroll.addView(body);
         LinearLayout brand=new LinearLayout(this); brand.setGravity(Gravity.CENTER_VERTICAL);
@@ -199,8 +206,11 @@ public class MainActivity extends Activity {
         hero.addView(label("本地阅读 · 自由批注 · 随时保存\n双指缩放，清晰查看每一处细节",14,0xff706A89,false)); space(hero,22);
         hero.addView(button("＋  打开手机中的 PDF",()->confirmLeave(this::openLibrary),true),new LinearLayout.LayoutParams(-1,dp(52)));
         body.addView(hero); space(body,22);
-        if(new File(getFilesDir(),"session.json").isFile()&&source.isFile()) {
-            body.addView(button("继续上次阅读 / 恢复编辑草稿",this::restore,false)); space(body,18);
+        String last=getPreferences(0).getString("last_draft","");
+        boolean hasDraft=drafts.exists(last),hasLegacy=new File(getFilesDir(),"session.json").isFile()&&new File(getFilesDir(),"current.pdf").isFile();
+        if(hasDraft||hasLegacy) {
+            String resume=(hasDraft&&drafts.dirty(last))?"继续上次阅读 · 有编辑草稿":"继续上次阅读";
+            body.addView(button(resume,this::restore,false)); space(body,18);
         }
         LinearLayout recentTitle=new LinearLayout(this); recentTitle.addView(label("最近打开",17,INK,true),new LinearLayout.LayoutParams(0,-2,1));
         TextView clear=label("清空",13,MUTED,false); clear.setPadding(dp(12),dp(8),0,dp(8)); clear.setOnClickListener(v->{getPreferences(0).edit().remove("recent").apply(); home();}); recentTitle.addView(clear); body.addView(recentTitle);
@@ -208,10 +218,15 @@ public class MainActivity extends Activity {
         if(recent.length()==0) { space(body,10); body.addView(label("打开的文档会出现在这里",14,MUTED,false)); }
         for(int i=0;i<recent.length();i++) {
             JSONObject item=recent.optJSONObject(i); if(item==null) continue;
-            TextView row=label("▤   "+item.optString("name"),15,INK,false); row.setSingleLine(true); row.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            row.setPadding(dp(14),dp(18),dp(14),dp(18)); row.setBackground(shape(Color.WHITE,12));
+            String itemUri=item.optString("uri"),itemName=item.optString("name");
+            boolean hasChanges=drafts.dirty(drafts.id(positionKey(itemUri)));
+            LinearLayout row=vertical(); row.setPadding(dp(14),dp(12),dp(14),dp(12)); row.setBackground(shape(Color.WHITE,12));
+            TextView rowTitle=label("▤   "+itemName,15,INK,false); rowTitle.setSingleLine(true); rowTitle.setEllipsize(android.text.TextUtils.TruncateAt.END); row.addView(rowTitle);
+            if(hasChanges) { TextView badge=label("编辑草稿已自动保留",11,PURPLE,true); badge.setPadding(dp(28),dp(4),0,0); row.addView(badge); }
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.topMargin=dp(8); body.addView(row,p);
-            row.setOnClickListener(v->confirmLeave(()->openUri(Uri.parse(item.optString("uri")),null)));
+            row.setOnClickListener(v->confirmLeave(()->{
+                String id=drafts.id(positionKey(itemUri)); if(drafts.exists(id)) restoreDraft(id); else openUri(Uri.parse(itemUri),null);
+            }));
         }
         space(body,24); TextView foot=label("文件留在设备上",12,MUTED,false); foot.setGravity(Gravity.CENTER); body.addView(foot);
     }
@@ -250,8 +265,8 @@ public class MainActivity extends Activity {
         space(body,8); body.addView(button("＋  添加微信 / QQ 文件夹",()->chooseFolder("微信 / QQ 文件夹"),false),new LinearLayout.LayoutParams(-1,dp(44)));
         space(body,28); body.addView(label("阅读方式",18,INK,true)); space(body,7);
         LinearLayout reading=vertical(); reading.setPadding(dp(12),dp(4),dp(12),dp(4)); reading.setBackground(shape(night?0xff292A33:Color.WHITE,14));
-        Switch continuousSwitch=new Switch(this); continuousSwitch.setText("连续滚动阅读"); continuousSwitch.setTextSize(15); continuousSwitch.setTextColor(themeColor(INK)); continuousSwitch.setChecked(continuous); continuousSwitch.setPadding(0,dp(7),0,dp(7));
-        continuousSwitch.setOnCheckedChangeListener((view,checked)->{ continuous=checked; getPreferences(0).edit().putBoolean("continuous",checked).apply(); }); reading.addView(continuousSwitch);
+        Switch continuousSwitch=new Switch(this); continuousSwitch.setText("连续滚动阅读"); continuousSwitch.setTextSize(15); continuousSwitch.setTextColor(themeColor(INK)); continuousSwitch.setChecked(continuous||returnToContinuous); continuousSwitch.setPadding(0,dp(7),0,dp(7));
+        continuousSwitch.setOnCheckedChangeListener((view,checked)->{ continuous=checked; returnToContinuous=false; getPreferences(0).edit().putBoolean("continuous",checked).apply(); }); reading.addView(continuousSwitch);
         reading.addView(label("关闭时保留单页左右翻页；阅读页右上角也可快速切换。",12,MUTED,false)); body.addView(reading);
         space(body,12);
         Switch fitSwitch=new Switch(this); fitSwitch.setText("滚动阅读适合正文宽度"); fitSwitch.setTextSize(15); fitSwitch.setTextColor(themeColor(INK)); fitSwitch.setChecked(fitContent);
@@ -272,7 +287,7 @@ public class MainActivity extends Activity {
         if(sourceUri.isEmpty()) return;
         try {
             JSONArray old=recent(),next=new JSONArray(); next.put(new JSONObject().put("name",name).put("uri",sourceUri));
-            for(int i=0;i<old.length()&&next.length()<6;i++) if(!sourceUri.equals(old.getJSONObject(i).optString("uri"))) next.put(old.get(i));
+            for(int i=0;i<old.length()&&next.length()<12;i++) if(!sourceUri.equals(old.getJSONObject(i).optString("uri"))) next.put(old.get(i));
             getPreferences(0).edit().putString("recent",next.toString()).apply();
         } catch(JSONException ignored) { }
     }
@@ -412,6 +427,7 @@ public class MainActivity extends Activity {
         } catch(JSONException e) { error("移除文件夹失败。"); }
     }
     private String fileName(Uri uri) {
+        if("file".equals(uri.getScheme())&&uri.getPath()!=null) return new File(uri.getPath()).getName();
         try(Cursor c=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)) {
             if(c!=null&&c.moveToFirst()&&!c.isNull(0)) return c.getString(0);
         } catch(Exception ignored) { }
@@ -420,13 +436,16 @@ public class MainActivity extends Activity {
     private interface Job<T> { T run() throws Exception; }
     private interface Done<T> { void run(T value); }
     private <T> void task(String message,Job<T> job,Done<T> done) {
+        task(message,job,done,null);
+    }
+    private <T> void task(String message,Job<T> job,Done<T> done,Runnable failed) {
         if(busy) return; busy=true;
         LinearLayout box=vertical(); box.setGravity(Gravity.CENTER); box.setPadding(dp(32),dp(24),dp(32),dp(24));
         ProgressBar spinner=new ProgressBar(this); box.addView(spinner,new LinearLayout.LayoutParams(dp(40),dp(40))); space(box,16); box.addView(label(message,14,INK,false));
         progress=dialog().setView(box).setCancelable(false).create(); progress.show();
         worker.execute(()->{
             try { T result=job.run(); runOnUiThread(()->{ finishBusy(); if(!destroyed) done.run(result); }); }
-            catch(Exception | OutOfMemoryError e) { runOnUiThread(()->{finishBusy(); if(!destroyed) error(e instanceof OutOfMemoryError?"文档内容过大，内存不足。请尝试较小的 PDF。":friendly(e));}); }
+            catch(Exception | OutOfMemoryError e) { runOnUiThread(()->{finishBusy(); if(!destroyed) { if(failed!=null) failed.run(); error(e instanceof OutOfMemoryError?"文档内容过大，内存不足。请尝试较小的 PDF。":friendly(e)); }}); }
         });
     }
     private void finishBusy() { busy=false; if(progress!=null) { progress.dismiss(); progress=null; } }
@@ -441,27 +460,49 @@ public class MainActivity extends Activity {
         if(input==null||output==null) throw new IOException("文件提供方未返回可用的数据流");
         byte[] b=new byte[65536]; int n; while((n=input.read(b))!=-1) output.write(b,0,n); output.flush();
     }
+    private void offerImport(Uri uri) {
+        dialog().setTitle("从其他应用打开 PDF")
+            .setMessage("保存到纸阅后，微信或 QQ 的临时分享权限失效也能继续阅读和编辑，并可直接覆盖这份本地副本。")
+            .setPositiveButton("保存到纸阅并打开",(d,w)->importLocal(uri))
+            .setNeutralButton("仅本次打开",(d,w)->openUri(uri,null)).setNegativeButton("取消",null).show();
+    }
+    private void importLocal(Uri uri) {
+        final String display=fileName(uri);
+        task("正在保存到纸阅…",()->{
+            File directory=new File(getFilesDir(),"imports");
+            if(!directory.exists()&&!directory.mkdirs()) throw new IOException("无法创建本地文档目录");
+            String safe=display.replaceAll("[\\\\/:*?\"<>|]","_");
+            if(!safe.toLowerCase(Locale.ROOT).endsWith(".pdf")) safe+=".pdf";
+            File target=new File(directory,System.currentTimeMillis()+"-"+safe);
+            try(InputStream input=getContentResolver().openInputStream(uri);OutputStream output=new FileOutputStream(target)) { copy(input,output); }
+            return target;
+        },file->{ toast("已保存到纸阅"); openUri(Uri.fromFile(file),null); });
+    }
     private void openUri(Uri uri,String password) {
         if(busy) return; capturePosition();
+        if(returnToContinuous) { continuous=true; returnToContinuous=false; }
+        String nextDraft=drafts.id(positionKey(uri.toString()));
+        if(password==null&&drafts.dirty(nextDraft)) { restoreDraft(nextDraft); return; }
         if(continuousView!=null) { continuousView.dispose(); continuousView=null; }
         task("正在打开 PDF…",()->{
-            File stage=new File(getFilesDir(),"incoming.pdf");
+            File stage=new File(getCacheDir(),"incoming-"+nextDraft+".pdf");
             try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(stage)) { copy(in,out); }
-            return prepare(stage,password);
+            return prepare(stage,password,drafts.pdf(nextDraft));
         },result->{
             if(result==-1) { password(uri); return; }
-            name=fileName(uri); sourceUri=uri.toString(); opened(result); remember(); persist();
+            draftId=nextDraft; source=drafts.pdf(draftId); getPreferences(0).edit().putString("active_draft",draftId).putString("last_draft",draftId).apply();
+            name=fileName(uri); sourceUri=uri.toString(); saveStatus="已打开"; opened(result); remember(); persist();
         });
     }
-    private int prepare(File stage,String password) throws IOException {
+    private int prepare(File stage,String password,File target) throws IOException {
         boolean permission;
         try(PDDocument doc=PDDocument.load(stage,password==null?"":password)) {
             if(doc.getNumberOfPages()<1) throw new IOException("此 PDF 没有页面");
             permission=doc.getCurrentAccessPermission().canModify();
             if(doc.isEncrypted()) {
                 // A private decrypted working copy lets the system renderer read password-protected files.
-                doc.setAllSecurityToBeRemoved(true); doc.save(new File(getFilesDir(),"unlocked.pdf"));
-                stage=new File(getFilesDir(),"unlocked.pdf");
+                File unlocked=new File(getCacheDir(),"unlocked-"+target.getName());
+                doc.setAllSecurityToBeRemoved(true); doc.save(unlocked); stage=unlocked;
             }
         } catch(InvalidPasswordException e) { return -1; }
         // Verify rendering before replacing the previous recoverable session.
@@ -469,12 +510,12 @@ public class MainActivity extends Activity {
             if(check.getPageCount()<1) throw new IOException("无法读取 PDF 页面");
         }
         closeRenderer();
-        AtomicFile atomic=new AtomicFile(source); FileOutputStream output=null;
+        AtomicFile atomic=new AtomicFile(target); FileOutputStream output=null;
         try(InputStream in=new FileInputStream(stage)) { output=atomic.startWrite(); copy(in,output); atomic.finishWrite(output); }
         catch(IOException e) { if(output!=null) atomic.failWrite(output); throw e; }
-        renderer=new PdfRenderer(ParcelFileDescriptor.open(source,ParcelFileDescriptor.MODE_READ_ONLY));
+        renderer=new PdfRenderer(ParcelFileDescriptor.open(target,ParcelFileDescriptor.MODE_READ_ONLY));
         canModify=permission;
-        new File(getFilesDir(),"incoming.pdf").delete(); new File(getFilesDir(),"unlocked.pdf").delete();
+        stage.delete();
         return renderer.getPageCount();
     }
     private void password(Uri uri) {
@@ -506,6 +547,8 @@ public class MainActivity extends Activity {
             public void mark(PdfEngine.Mark mark) { if(!busy) { checkpoint(); sheets.get(current).marks.add(mark); changed(); } }
             public void text(float x,float y) { addText(x,y); }
             public void turn(int delta) { go(current+delta); }
+            public void erase(int index) { eraseMark(index); }
+            public void select(int index) { selectMark(index); }
         });
         pageView.night(night);
         pageView.setOnClickListener(v->toggleReaderChrome());
@@ -522,9 +565,15 @@ public class MainActivity extends Activity {
         nav.addView(pager,new LinearLayout.LayoutParams(0,dp(48),1)); nav.addView(button("下一页 ›",()->go(current+1),false)); root.addView(nav);
         HorizontalScrollView scroller=new HorizontalScrollView(this); readerTools=scroller; scroller.setHorizontalScrollBarEnabled(false);
         LinearLayout tools=new LinearLayout(this); tools.setPadding(dp(8),dp(3),dp(8),dp(5)); scroller.addView(tools);
-        modes.clear(); String[] labels={"☝ 阅读","✎ 画笔","▧ 荧光","T 文字"};
+        if(!continuous&&returnToContinuous) {
+            TextView backToScroll=compactButton("↩ 返回滚动",this::returnToContinuous); LinearLayout.LayoutParams backParams=new LinearLayout.LayoutParams(dp(86),dp(38)); backParams.rightMargin=dp(2); tools.addView(backToScroll,backParams);
+        }
+        modes.clear(); String[] labels=continuous?new String[]{"☝ 阅读"}:new String[]{"☝ 阅读","✎ 画笔","▧ 荧光","T 文字","⌫ 擦除","▣ 选择"};
         for(int i=0;i<labels.length;i++) { final int index=i; TextView v=compactButton(labels[i],()->setMode(index)); modes.add(v);
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(66),dp(38)); p.setMargins(dp(2),0,dp(2),0); tools.addView(v,p); }
+        if(continuous) {
+            TextView edit=compactButton("✎ 编辑本页",this::editCurrentPage); tools.addView(edit,new LinearLayout.LayoutParams(dp(86),dp(38)));
+        }
         TextView undoButton=compactButton("↶ 撤销",this::undo); LinearLayout.LayoutParams undoParams=new LinearLayout.LayoutParams(dp(68),dp(38)); undoParams.leftMargin=dp(2); tools.addView(undoButton,undoParams);
         root.addView(scroller,new LinearLayout.LayoutParams(-1,dp(46))); setMode(continuous?0:mode); applyReaderChrome(); render();
     }
@@ -535,11 +584,20 @@ public class MainActivity extends Activity {
         return v;
     }
     private void setMode(int next) {
-        if(continuous&&next!=0) { error("连续滚动模式用于阅读；请到设置关闭连续滚动后再编辑。"); return; }
+        if(continuous&&next!=0) { editCurrentPage(); return; }
         if(next!=0&&!canModify) { error("作者已限制此 PDF 的修改权限，可以继续阅读。"); return; }
         mode=next; pageView.mode(mode);
-        String[] help={"轻触隐藏 / 显示工具栏 · 双指缩放 · 左右翻页","在页面上手写标记 · 双指缩放或移动","拖出矩形标记区域 · 双指缩放或移动","点击页面放置文字 · 支持中文、多行输入"}; hint.setText(continuous?"轻触隐藏 / 显示工具栏 · 上下滚动 · 双指缩放":help[mode]);
+        String[] help={"轻触隐藏 / 显示工具栏 · 双指缩放 · 左右翻页","在页面上手写标记 · 双指缩放或移动","拖出矩形标记区域 · 双指缩放或移动","点击页面放置文字 · 支持中文、多行输入","点击已有批注即可删除","点击批注后可编辑、换色或删除"}; hint.setText(continuous?"轻触隐藏 / 显示工具栏 · 上下滚动 · 可直接编辑当前页":help[mode]);
         for(int i=0;i<modes.size();i++) { modes.get(i).setTextColor(i==mode?Color.WHITE:(night?0xffCEC2FF:PURPLE)); modes.get(i).setBackground(shape(i==mode?PURPLE:0xffEDEAF9,10)); }
+    }
+    private void editCurrentPage() {
+        if(!continuous||!editable()) return;
+        capturePosition(); returnContinuousFraction=readingFraction; returnToContinuous=true;
+        continuous=false; mode=PdfEngine.INK; viewer();
+    }
+    private void returnToContinuous() {
+        if(!returnToContinuous) return;
+        continuous=true; returnToContinuous=false; readingFraction=returnContinuousFraction; mode=0; viewer();
     }
     private void render() {
         if(renderer==null||sheets.isEmpty()||!viewing) return;
@@ -561,13 +619,15 @@ public class MainActivity extends Activity {
     private boolean dirty() { return !savedModel.equals(PdfEngine.encode(sheets)); }
     private void update() {
         if(!viewing) return; pager.setText((current+1)+" / "+sheets.size()+"  ⌄");
-        subtitle.setText((dirty()?"有修改 · 草稿已保留":"本地 PDF · "+sheets.size()+" 页")+(canModify?"":" · 只读"));
+        boolean operationStatus=saveStatus.startsWith("正在")||saveStatus.contains("失败")||saveStatus.contains("未完成")||saveStatus.contains("已取消");
+        String status=operationStatus?saveStatus:(dirty()?"编辑中 · 草稿已自动保存":saveStatus+" · "+sheets.size()+" 页");
+        subtitle.setText(status+(canModify?"":" · 只读"));
         saveButton.setText(dirty()?"保存 •":"保存");
     }
     private void checkpoint() {
         undo.push(PdfEngine.encode(sheets)); if(undo.size()>30) undo.removeLast(); redo.clear();
     }
-    private void changed() { if(continuousView!=null) continuousView.invalidate(); else pageView.refresh(sheets.get(current)); update(); persist(); }
+    private void changed() { saveStatus="编辑中 · 草稿已自动保存"; if(continuousView!=null) continuousView.invalidate(); else pageView.refresh(sheets.get(current)); update(); persist(); }
     private void undo() {
         if(undo.isEmpty()) { toast("没有可撤销的修改"); return; }
         redo.push(PdfEngine.encode(sheets)); applyState(undo.pop());
@@ -577,7 +637,7 @@ public class MainActivity extends Activity {
         undo.push(PdfEngine.encode(sheets)); applyState(redo.pop());
     }
     private void applyState(String json) {
-        try { sheets=PdfEngine.decode(json); current=Math.min(current,sheets.size()-1); if(continuous) reloadContinuous(); else render(); persist(); }
+        try { sheets=PdfEngine.decode(json); current=Math.min(current,sheets.size()-1); saveStatus="编辑中 · 草稿已自动保存"; if(continuous) reloadContinuous(); else render(); persist(); }
         catch(JSONException e) { error(friendly(e)); }
     }
     private void reloadContinuous() {
@@ -605,6 +665,39 @@ public class MainActivity extends Activity {
             m.width=(size.getProgress()+10)/595f; m.points.add(new PointF(x,y)); checkpoint(); sheets.get(current).marks.add(m); changed(); dialog.dismiss();
         })); dialog.show();
     }
+    private void eraseMark(int index) {
+        if(index<0) { toast("这里没有批注"); return; }
+        checkpoint(); sheets.get(current).marks.remove(index); changed(); toast("批注已擦除");
+    }
+    private void selectMark(int index) {
+        if(index<0) { toast("这里没有批注"); return; }
+        pageView.selected(index); PdfEngine.Mark mark=sheets.get(current).marks.get(index);
+        ArrayList<String> actions=new ArrayList<>();
+        if(mark.type==PdfEngine.TEXT) actions.add("编辑文字");
+        actions.add("改为紫色"); actions.add("改为红色"); actions.add("删除批注"); actions.add("取消选择");
+        dialog().setTitle("已选择批注").setItems(actions.toArray(new String[0]),(d,which)->{
+            String action=actions.get(which);
+            if("编辑文字".equals(action)) { editTextMark(index); return; }
+            if("删除批注".equals(action)) { checkpoint(); sheets.get(current).marks.remove(index); pageView.selected(-1); changed(); return; }
+            if("改为紫色".equals(action)||"改为红色".equals(action)) {
+                checkpoint(); int color="改为紫色".equals(action)?0xff6253C8:0xffD14B5A;
+                if(mark.type==PdfEngine.HIGHLIGHT) color=(color&0x00ffffff)|0x66000000;
+                mark.color=color; changed(); pageView.selected(index); return;
+            }
+            pageView.selected(-1);
+        }).setOnCancelListener(d->pageView.selected(-1)).show();
+    }
+    private void editTextMark(int index) {
+        if(index<0||index>=sheets.get(current).marks.size()) return;
+        PdfEngine.Mark mark=sheets.get(current).marks.get(index); EditText input=new EditText(dialogContext());
+        input.setText(mark.text); input.setSelection(input.length()); input.setMinLines(2); input.setMaxLines(6);
+        input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        AlertDialog edit=dialog().setTitle("编辑批注文字").setView(input).setPositiveButton("保存",null).setNegativeButton("取消",(d,w)->pageView.selected(-1)).create();
+        edit.setOnShowListener(d->edit.getButton(-1).setOnClickListener(v->{
+            String text=input.getText().toString().trim(); if(text.isEmpty()) { input.setError("请输入文字"); return; }
+            checkpoint(); mark.text=text; changed(); pageView.selected(index); edit.dismiss();
+        })); edit.setOnCancelListener(d->pageView.selected(-1)); edit.show();
+    }
     private void jump() {
         EditText input=new EditText(dialogContext()); input.setInputType(InputType.TYPE_CLASS_NUMBER); input.setHint("1 – "+sheets.size());
         dialog().setTitle("跳转到页码").setView(input).setPositiveButton("前往",(d,w)->{
@@ -620,12 +713,12 @@ public class MainActivity extends Activity {
                 case 0: confirmLeave(this::pick); break;
                 case 1: search(); break;
                 case 2: pages(); break;
-                case 3: if(editable()) { checkpoint(); PdfEngine.rotate(sheets.get(current)); if(continuous) reloadContinuous(); else render(); persist(); } break;
+                case 3: if(editable()) { checkpoint(); PdfEngine.rotate(sheets.get(current)); saveStatus="编辑中 · 草稿已自动保存"; if(continuous) reloadContinuous(); else render(); persist(); } break;
                 case 4: deletePage(); break;
                 case 5: redo(); break;
                 case 6: export(true); break;
                 case 7: capturePosition(); night=!night; getPreferences(0).edit().putBoolean("night",night).apply(); viewer(); break;
-                case 8: capturePosition(); continuous=!continuous; getPreferences(0).edit().putBoolean("continuous",continuous).apply(); viewer(); break;
+                case 8: capturePosition(); continuous=!continuous; returnToContinuous=false; getPreferences(0).edit().putBoolean("continuous",continuous).apply(); viewer(); break;
                 case 9: help(); break;
             }
         }).show();
@@ -635,7 +728,7 @@ public class MainActivity extends Activity {
         if(!editable()) return;
         if(sheets.size()==1) { toast("至少需要保留一页"); return; }
         dialog().setTitle("删除第 "+(current+1)+" 页？").setMessage("只影响编辑副本，可用“撤销”恢复。")
-            .setPositiveButton("删除",(d,w)->{checkpoint(); sheets.remove(current); current=Math.min(current,sheets.size()-1); if(continuous) reloadContinuous(); else render(); persist();}).setNegativeButton("取消",null).show();
+            .setPositiveButton("删除",(d,w)->{checkpoint(); sheets.remove(current); current=Math.min(current,sheets.size()-1); saveStatus="编辑中 · 草稿已自动保存"; if(continuous) reloadContinuous(); else render(); persist();}).setNegativeButton("取消",null).show();
     }
     private void pages() {
         String[] list=new String[sheets.size()];
@@ -645,7 +738,7 @@ public class MainActivity extends Activity {
             dialog().setTitle("第 "+(n+1)+" 页").setItems(new String[]{"阅读这一页","向前移动一页","向后移动一页"},(dialog,action)->{
                 if(action==0||!editable()) return; int to=action==1?n-1:n+1;
                 if(to<0||to>=sheets.size()) { toast("已到文档边界"); return; }
-                checkpoint(); Collections.swap(sheets,n,to); current=to; if(continuous) reloadContinuous(); else render(); persist();
+                checkpoint(); Collections.swap(sheets,n,to); current=to; saveStatus="编辑中 · 草稿已自动保存"; if(continuous) reloadContinuous(); else render(); persist();
             }).show();
         }).setNegativeButton("关闭",null).show();
     }
@@ -663,7 +756,7 @@ public class MainActivity extends Activity {
     }
     private void help() {
         dialog().setTitle("纸阅 PDF · 使用说明 · v"+BuildConfig.VERSION_NAME)
-            .setMessage("阅读：阅读模式轻触页面隐藏或显示工具栏，隐藏时按返回先呼出工具栏；双击仍用于缩放。屏幕方向跟随系统自动旋转设置，横屏单页适合页宽，可上下拖动阅读长页，左右安全边距避开导航栏和挖孔。默认支持双指缩放、移动和左右滑动翻页；在设置或右上角菜单开启“连续滚动阅读”后，可上下滑动、双指缩放、放大后拖动，双击放大或恢复适宽。默认收起左右白边适合正文宽度，可在设置关闭；再次打开同一文件自动恢复上次页码和页内位置。\n\n修改：画笔手写、矩形荧光标记、添加中文文字；支持页面旋转、删除、调整顺序，以及撤销和重做。连续滚动模式下画笔、荧光和文字工具需要先切回单页模式，页面管理仍可使用。\n\n保存：可覆盖原文件，或另存为 PDF 保留原文件。覆盖前需要写入授权，应用会备份并校验写入。批注作为页面内容写入，其他 PDF 阅读器可查看；不支持直接改写原有段落、OCR 或交互表单。\n\n草稿：阅读位置和当前修改保留在本机。打开新文档前请保存需要保留的编辑。\n\n隐私：无需网络权限，不上传文件。加密 PDF 需输入合法密码；另存副本不保留加密。\n\n开源组件：PDFBox-Android 2.0.27.0（Apache 2.0）、Apache PDFBox / FontBox、Bouncy Castle（MIT）。")
+            .setMessage("阅读：阅读模式轻触页面隐藏或显示工具栏，隐藏时按返回先呼出工具栏；双击仍用于缩放。屏幕方向跟随系统自动旋转设置，横屏单页适合页宽，可上下拖动阅读长页，左右安全边距避开导航栏和挖孔。连续滚动时可直接点“编辑本页”，完成后返回原滚动位置。\n\n修改：画笔手写、矩形荧光、中文文字、点按擦除；“选择”可编辑文字、换色或删除批注。支持页面旋转、删除、调整顺序，以及撤销和重做。\n\n导入：从微信、QQ 或其他应用打开时，可一键“保存到纸阅并打开”。本地副本不依赖临时分享权限，并可直接覆盖保存。\n\n保存：标题下方会显示正在保存、已写入原文件、已另存副本或写入失败。失败时编辑草稿仍保留。覆盖原文件前会备份并校验写入；批注作为页面内容写入，其他 PDF 阅读器可查看。\n\n草稿：每份文档单独自动保存编辑模型和阅读位置，可以直接切换文档；最近列表会标出尚未导出的编辑草稿。清空最近列表不会删除草稿。\n\n边界：不支持直接改写原有段落、OCR 或交互表单。加密 PDF 需输入合法密码；另存副本不保留加密。\n\n隐私：无需网络权限，不上传文件。\n\n开源组件：PDFBox-Android 2.0.27.0（Apache 2.0）、Apache PDFBox / FontBox、Bouncy Castle（MIT）。")
             .setPositiveButton("知道了",null).show();
     }
     private void saveDialog() {
@@ -677,6 +770,7 @@ public class MainActivity extends Activity {
         boolean edits=sheets.size()!=renderer.getPageCount();
         for(int i=0;i<sheets.size();i++) { PdfEngine.Sheet s=sheets.get(i); if(s.original!=i||s.rotation!=0||!s.marks.isEmpty()) edits=true; }
         final boolean hasEdits=edits;
+        if(!share) { saveStatus="正在准备保存…"; update(); persist(); }
         task("正在生成 PDF…",()->{
             File directory=new File(getCacheDir(),"shared"); if(!directory.exists()&&!directory.mkdirs()) throw new IOException("无法创建临时目录");
             File file=new File(directory,"paper-"+System.currentTimeMillis()+".pdf");
@@ -696,16 +790,17 @@ public class MainActivity extends Activity {
                 pendingExport=file;
                 Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE)
                     .putExtra(Intent.EXTRA_TITLE,name.replaceFirst("(?i)\\.pdf$","")+"-已编辑.pdf");
-                try { startActivityForResult(intent,SAVE); } catch(ActivityNotFoundException e) { error("设备没有可用的系统文件保存器。"); }
+                try { startActivityForResult(intent,SAVE); } catch(ActivityNotFoundException e) { pendingExport=null; saveStatus="另存失败 · 草稿仍在"; update(); persist(); error("设备没有可用的系统文件保存器。"); }
             }
-        });
+        },()->{ if(!share) { saveStatus="保存失败 · 草稿仍在"; update(); persist(); } });
     }
     private void requestOverwrite() {
-        if(sourceUri.isEmpty()) { error("当前文档没有原文件位置，请另存为 PDF。"); return; }
+        if(sourceUri.isEmpty()) { pendingOverwrite=null; saveStatus="覆盖失败 · 草稿仍在"; update(); persist(); error("当前文档没有原文件位置，请另存为 PDF。"); return; }
         Uri uri=Uri.parse(sourceUri);
         boolean writable="file".equals(uri.getScheme())&&new File(uri.getPath()).canWrite();
         writable|=checkUriPermission(uri,android.os.Process.myPid(),android.os.Process.myUid(),Intent.FLAG_GRANT_WRITE_URI_PERMISSION)==android.content.pm.PackageManager.PERMISSION_GRANTED;
         if(writable) { writeOriginal(uri); return; }
+        saveStatus="正在等待原文件授权…"; update(); persist();
         dialog().setTitle("需要原文件写入授权")
             .setMessage("请在系统文件选择器中重新选择原 PDF：“"+name+"”。只读的微信 / QQ 分享文件可先保存到本地，再用纸阅打开。")
             .setPositiveButton("选择原文件",(d,w)->{
@@ -713,15 +808,17 @@ public class MainActivity extends Activity {
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                 if(Build.VERSION.SDK_INT>=26) intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,uri);
                 try {startActivityForResult(intent,WRITE_ORIGINAL);} catch(ActivityNotFoundException e) {error("未找到系统文件选择器，请另存为 PDF。");}
-            }).setNegativeButton("取消",null).show();
+            }).setNegativeButton("取消",(d,w)->{pendingOverwrite=null;saveStatus="保存已取消 · 草稿仍在";update();persist();}).show();
     }
     private void writeOriginal(Uri uri) {
         if(pendingOverwrite==null) return;
         File edited=pendingOverwrite; final String snapshot=PdfEngine.encode(sheets);
+        saveStatus="正在写入原文件…"; update(); persist();
         task("正在覆盖并校验原文件…",()->{
             File backup=new File(getFilesDir(),"original-backup-"+System.currentTimeMillis()+".pdf");
             OriginalFileWriter.replace(getContentResolver(),uri,edited,backup); return true;
-        },ok->{savedModel=snapshot; pendingOverwrite=null; update(); persist(); toast("已覆盖保存原文件");});
+        },ok->{savedModel=snapshot; pendingOverwrite=null; saveStatus="已写入原文件"; update(); persist(); toast("已写入原文件，草稿与文件一致");},
+        ()->{saveStatus="写入失败 · 草稿仍在";update();persist();});
     }
     private void keepPermission(Uri uri,Intent data) {
         try {
@@ -738,7 +835,12 @@ public class MainActivity extends Activity {
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(busy) { root.postDelayed(()->{if(!destroyed) onActivityResult(request,result,data);},150); return; }
-        if(result!=RESULT_OK||data==null||data.getData()==null) return; Uri uri=data.getData();
+        if(result!=RESULT_OK||data==null||data.getData()==null) {
+            if(request==SAVE&&pendingExport!=null) { pendingExport=null; saveStatus=dirty()?"编辑中 · 草稿已自动保存":"已打开"; update(); persist(); }
+            if(request==WRITE_ORIGINAL&&pendingOverwrite!=null) { pendingOverwrite=null; saveStatus="保存已取消 · 草稿仍在"; update(); persist(); }
+            return;
+        }
+        Uri uri=data.getData();
         if(request==WRITE_ORIGINAL) {
             keepPermission(uri,data);
             if(!positionKey(sourceUri).equals(positionKey(uri.toString()))) { error("选择的不是当前原文件，未覆盖任何文件。请重新选择原文件，或使用另存为 PDF。"); return; }
@@ -750,16 +852,13 @@ public class MainActivity extends Activity {
         } else if(request==SAVE&&pendingExport!=null) {
             final File file=pendingExport;
             task("正在保存文件…",()->{ try(InputStream in=new FileInputStream(file);OutputStream out=getContentResolver().openOutputStream(uri,"wt")) { copy(in,out); } return true; },ok->{
-                savedModel=PdfEngine.encode(sheets); pendingExport=null; update(); persist(); toast("PDF 已保存到所选位置");
-            });
+                savedModel=PdfEngine.encode(sheets); pendingExport=null; saveStatus="已另存副本："+fileName(uri); update(); persist(); toast("已另存 PDF，草稿与副本一致");
+            },()->{saveStatus="另存失败 · 草稿仍在";update();persist();});
         }
     }
     private void confirmLeave(Runnable action) {
         if(busy) return;
-        if(!sheets.isEmpty()&&dirty()) {
-            dialog().setTitle("文档有尚未导出的修改").setMessage("草稿保留在本机；打开新文档会替换草稿。需要保留修改时请先另存 PDF。")
-                .setPositiveButton("先保存",(d,w)->saveDialog()).setNegativeButton("继续",(d,w)->action.run()).setNeutralButton("取消",null).show();
-        } else action.run();
+        capturePosition(); action.run();
     }
     private void capturePosition() {
         if(busy||sheets.isEmpty()) return;
@@ -774,8 +873,7 @@ public class MainActivity extends Activity {
         } catch(JSONException ignored) { }
     }
     private void persist() {
-        if(sheets.isEmpty()) return;
-        AtomicFile f=new AtomicFile(new File(getFilesDir(),"session.json")); FileOutputStream out=null;
+        if(sheets.isEmpty()||draftId.isEmpty()) return;
         try {
             if(!sourceUri.isEmpty()) {
                 JSONObject positions=new JSONObject(getPreferences(0).getString("positions","{}"));
@@ -783,20 +881,41 @@ public class MainActivity extends Activity {
                 getPreferences(0).edit().putString("positions",positions.toString()).apply();
             }
             JSONObject json=new JSONObject().put("fraction",readingFraction).put("name",name).put("uri",sourceUri).put("pages",PdfEngine.encode(sheets)).put("page",current)
-                .put("saved",savedModel).put("modify",canModify);
-            out=f.startWrite(); out.write(json.toString().getBytes(StandardCharsets.UTF_8)); f.finishWrite(out);
-        } catch(Exception e) { if(out!=null) f.failWrite(out); toast("草稿保存失败，请及时另存 PDF"); }
+                .put("saved",savedModel).put("modify",canModify).put("status",saveStatus);
+            drafts.write(draftId,json);
+            getPreferences(0).edit().putString("active_draft",draftId).putString("last_draft",draftId).apply();
+        } catch(Exception e) { toast("草稿保存失败，请及时另存 PDF"); }
     }
     private void restore() {
+        String last=getPreferences(0).getString("last_draft","");
+        if(drafts.exists(last)) { restoreDraft(last); return; }
+        File legacyState=new File(getFilesDir(),"session.json"),legacyPdf=new File(getFilesDir(),"current.pdf");
+        if(!legacyState.isFile()||!legacyPdf.isFile()) { error("没有可恢复的阅读记录。"); return; }
         task("正在恢复文档…",()->{
             String json;
-            try(InputStream in=new AtomicFile(new File(getFilesDir(),"session.json")).openRead();ByteArrayOutputStream out=new ByteArrayOutputStream()) { copy(in,out); json=out.toString("UTF-8"); }
-            JSONObject state=new JSONObject(json); closeRenderer(); renderer=new PdfRenderer(ParcelFileDescriptor.open(source,ParcelFileDescriptor.MODE_READ_ONLY)); return state;
+            try(InputStream in=new AtomicFile(legacyState).openRead();ByteArrayOutputStream out=new ByteArrayOutputStream()) { copy(in,out); json=out.toString("UTF-8"); }
+            JSONObject state=new JSONObject(json); String id=drafts.id(positionKey(state.optString("uri","legacy")));
+            File target=drafts.pdf(id); try(InputStream in=new FileInputStream(legacyPdf);OutputStream out=new FileOutputStream(target)) { copy(in,out); }
+            state.put("status","已从 1.4.0 恢复"); drafts.write(id,state); state.put("_draft",id); return state;
+        },state->{
+            restoreDraft(state.optString("_draft"));
+        });
+    }
+    private void restoreDraft(String id) {
+        if(!drafts.exists(id)) { error("草稿文件已丢失，请重新打开原 PDF。"); return; }
+        task("正在恢复文档…",()->{
+            JSONObject state=drafts.read(id); File pdf=drafts.pdf(id);
+            try(PdfRenderer check=new PdfRenderer(ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY))) {
+                if(check.getPageCount()<1) throw new IOException("草稿 PDF 没有页面");
+            }
+            closeRenderer(); renderer=new PdfRenderer(ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY)); return state;
         },state->{
             try {
-                name=state.getString("name"); sourceUri=state.optString("uri"); sheets=PdfEngine.decode(state.getString("pages"));
+                draftId=id; source=drafts.pdf(id); name=state.getString("name"); sourceUri=state.optString("uri"); sheets=PdfEngine.decode(state.getString("pages"));
                 current=Math.max(0,Math.min(state.optInt("page"),sheets.size()-1)); readingFraction=(float)state.optDouble("fraction",0); savedModel=state.getString("saved"); canModify=state.optBoolean("modify",true);
-                undo.clear(); redo.clear(); mode=0; viewer();
+                saveStatus=state.optString("status","已恢复草稿"); if(saveStatus.startsWith("正在")) saveStatus="上次保存未完成 · 草稿仍在";
+                continuous=getPreferences(0).getBoolean("continuous",false); returnToContinuous=false;
+                getPreferences(0).edit().putString("active_draft",id).putString("last_draft",id).apply(); undo.clear(); redo.clear(); mode=0; remember(); viewer();
             } catch(JSONException e) { error("草稿无法恢复，请重新打开 PDF。"); }
         });
     }

@@ -14,7 +14,7 @@ import java.util.*;
 
 /** Original PDF stays immutable. Every export is rebuilt from the editable page model. */
 public final class PdfEngine {
-    public static final int INK = 1, HIGHLIGHT = 2, TEXT = 3;
+    public static final int INK = 1, HIGHLIGHT = 2, TEXT = 3, ERASER = 4, SELECT = 5;
     public static class Mark {
         int type, color;
         float width;
@@ -76,6 +76,40 @@ public final class PdfEngine {
                 else { for(int i=1;i<m.points.size();i++) { PointF point=m.points.get(i); path.lineTo(point.x*width,point.y*height); } c.drawPath(path,p); }
             }
         }
+    }
+    static RectF markBounds(Mark mark) {
+        if(mark.points.isEmpty()) return new RectF();
+        PointF first=mark.points.get(0);
+        if(mark.type==TEXT) {
+            String[] lines=mark.text.split("\n",-1); int longest=1;
+            for(String line:lines) longest=Math.max(longest,line.length());
+            float width=Math.max(.025f,longest*mark.width*.56f), height=Math.max(mark.width,lines.length*mark.width*1.18f);
+            return new RectF(first.x,first.y-mark.width,Math.min(1,first.x+width),Math.min(1,first.y-mark.width+height));
+        }
+        float left=first.x,right=first.x,top=first.y,bottom=first.y;
+        for(PointF point:mark.points) { left=Math.min(left,point.x); right=Math.max(right,point.x); top=Math.min(top,point.y); bottom=Math.max(bottom,point.y); }
+        float padding=Math.max(.012f,mark.width*1.8f);
+        return new RectF(Math.max(0,left-padding),Math.max(0,top-padding),Math.min(1,right+padding),Math.min(1,bottom+padding));
+    }
+    static int hitMark(List<Mark> marks,float x,float y) {
+        for(int i=marks.size()-1;i>=0;i--) {
+            Mark mark=marks.get(i); RectF bounds=markBounds(mark);
+            float padding=mark.type==TEXT?.012f:.018f;
+            bounds.inset(-padding,-padding);
+            if(mark.type==HIGHLIGHT||mark.type==TEXT) { if(bounds.contains(x,y)) return i; continue; }
+            if(mark.points.size()==1) {
+                PointF point=mark.points.get(0); if(Math.hypot(x-point.x,y-point.y)<=Math.max(.02f,mark.width*2.5f)) return i;
+            } else {
+                for(int n=1;n<mark.points.size();n++) if(distance(x,y,mark.points.get(n-1),mark.points.get(n))<=Math.max(.018f,mark.width*2.5f)) return i;
+            }
+        }
+        return -1;
+    }
+    private static float distance(float x,float y,PointF start,PointF end) {
+        float dx=end.x-start.x,dy=end.y-start.y,length=dx*dx+dy*dy;
+        if(length==0) return (float)Math.hypot(x-start.x,y-start.y);
+        float t=Math.max(0,Math.min(1,((x-start.x)*dx+(y-start.y)*dy)/length));
+        return (float)Math.hypot(x-(start.x+t*dx),y-(start.y+t*dy));
     }
     public static Bitmap render(PdfRenderer renderer, Sheet sheet, int requestedWidth) {
         try(PdfRenderer.Page page=renderer.openPage(sheet.original)) {

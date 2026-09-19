@@ -22,6 +22,12 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
     @Override protected void setUp() throws Exception {
         super.setUp(); getInstrumentation().waitForIdleSync(); context=getInstrumentation().getTargetContext(); PDFBoxResourceLoader.init(context);
         context.getSharedPreferences("MainActivity",0).edit().clear().commit();
+        remove(new File(context.getFilesDir(),"drafts")); remove(new File(context.getFilesDir(),"imports"));
+        new File(context.getFilesDir(),"session.json").delete(); new File(context.getFilesDir(),"current.pdf").delete();
+    }
+    private void remove(File file) {
+        if(file.isDirectory()) { File[] children=file.listFiles(); if(children!=null) for(File child:children) remove(child); }
+        file.delete();
     }
     private File fixture(String name,int pages) throws Exception {
         File f=new File(context.getCacheDir(),name);
@@ -208,9 +214,9 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
                 assertEquals(model[0],PdfEngine.encode((ArrayList<PdfEngine.Sheet>)field(a,"sheets")));
                 assertEquals(View.GONE,((View)field(a,"hint")).getVisibility());
             });
-            screenshot("paperpdf-140-landscape-controls");
+            screenshot("paperpdf-150-landscape-controls");
             tap(page); await(()->!(Boolean)field(a,"readerChromeVisible"));
-            screenshot("paperpdf-140-landscape-hidden");
+            screenshot("paperpdf-150-landscape-hidden");
             if(android.os.Build.VERSION.SDK_INT>=30) {
                 getInstrumentation().runOnMainSync(()->{
                     View root=(View)field(a,"root");
@@ -248,7 +254,7 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
                 assertEquals(.35f,view.pageFraction(),.025f); assertEquals(2.2f,view.zoomLevel(),.001f);
                 assertFalse((Boolean)field(a,"readerChromeVisible"));
             });
-            screenshot("paperpdf-140-continuous-landscape");
+            screenshot("paperpdf-150-continuous-landscape");
             tap(view); await(()->(Boolean)field(a,"readerChromeVisible"));
             Thread.sleep(400); tap(view); Thread.sleep(70); tap(view); Thread.sleep(450);
             getInstrumentation().runOnMainSync(()->{
@@ -392,7 +398,111 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
         getInstrumentation().runOnMainSync(()->find(viewer.getWindow().getDecorView(),"下一页").performClick());
         getInstrumentation().waitForIdleSync();
         getInstrumentation().runOnMainSync(()->assertNotNull(find(viewer.getWindow().getDecorView(),"2 / 4")));
-        assertTrue(new File(context.getFilesDir(),"session.json").isFile());
+        String active=context.getSharedPreferences("MainActivity",0).getString("active_draft","");
+        assertTrue(new DraftStore(context).state(active).isFile());
         getInstrumentation().runOnMainSync(viewer::finish);
+    }
+
+    public void testDraftStoreKeepsIndependentDocumentModels() throws Exception {
+        DraftStore store=new DraftStore(context); String first=store.id("document-a"),second=store.id("document-b");
+        assertFalse(first.equals(second));
+        ArrayList<PdfEngine.Sheet> clean=new ArrayList<>(); clean.add(new PdfEngine.Sheet(0)); String saved=PdfEngine.encode(clean);
+        PdfEngine.Mark mark=new PdfEngine.Mark(); mark.type=PdfEngine.INK; mark.color=Color.BLUE; mark.width=.01f; mark.points.add(new PointF(.2f,.2f)); clean.get(0).marks.add(mark);
+        store.write(first,new org.json.JSONObject().put("pages",PdfEngine.encode(clean)).put("saved",saved));
+        store.write(second,new org.json.JSONObject().put("pages",saved).put("saved",saved));
+        try(OutputStream out=new FileOutputStream(store.pdf(first))) { out.write(1); }
+        try(OutputStream out=new FileOutputStream(store.pdf(second))) { out.write(2); }
+        assertTrue(store.dirty(first)); assertFalse(store.dirty(second));
+        assertEquals(1,PdfEngine.decode(store.read(first).getString("pages")).get(0).marks.size());
+    }
+
+    public void testAnnotationHitTestingPrefersTopmostMark() {
+        ArrayList<PdfEngine.Mark> marks=new ArrayList<>();
+        PdfEngine.Mark ink=new PdfEngine.Mark(); ink.type=PdfEngine.INK; ink.width=.006f; ink.points.add(new PointF(.1f,.1f)); ink.points.add(new PointF(.9f,.9f)); marks.add(ink);
+        PdfEngine.Mark highlight=new PdfEngine.Mark(); highlight.type=PdfEngine.HIGHLIGHT; highlight.width=.004f; highlight.points.add(new PointF(.3f,.3f)); highlight.points.add(new PointF(.6f,.45f)); marks.add(highlight);
+        PdfEngine.Mark text=new PdfEngine.Mark(); text.type=PdfEngine.TEXT; text.width=.04f; text.text="批注"; text.points.add(new PointF(.4f,.4f)); marks.add(text);
+        assertEquals(2,PdfEngine.hitMark(marks,.43f,.39f));
+        assertEquals(1,PdfEngine.hitMark(marks,.58f,.44f));
+        assertEquals(0,PdfEngine.hitMark(marks,.2f,.2f));
+        assertEquals(-1,PdfEngine.hitMark(marks,.95f,.1f));
+    }
+
+    public void testContinuousReaderEditsCurrentPageAndReturns() throws Exception {
+        context.getSharedPreferences("MainActivity",0).edit().putBoolean("continuous",true).commit();
+        MainActivity activity=open(proseFixture("edit-current-page.pdf"));
+        try {
+            await(()->{ContinuousView view=(ContinuousView)field(activity,"continuousView");return view!=null&&view.visiblePagesReady();});
+            getInstrumentation().runOnMainSync(()->((ContinuousView)field(activity,"continuousView")).jumpToPosition(2,.3f));
+            await(()->((ContinuousView)field(activity,"continuousView")).currentPage()==2);
+            getInstrumentation().runOnMainSync(()->find(activity.getWindow().getDecorView(),"编辑本页").performClick());
+            await(()->field(activity,"continuousView")==null&&field(activity,"displayed")!=null&&((View)field(activity,"pageView")).isEnabled());
+            getInstrumentation().runOnMainSync(()->{
+                assertEquals(2,field(activity,"current")); assertEquals(PdfEngine.INK,field(activity,"mode"));
+                assertNotNull(find(activity.getWindow().getDecorView(),"返回滚动"));
+            });
+            screenshot("paperpdf-150-edit-current-page");
+            tap((View)field(activity,"pageView"));
+            getInstrumentation().runOnMainSync(()->find(activity.getWindow().getDecorView(),"返回滚动").performClick());
+            await(()->{ContinuousView view=(ContinuousView)field(activity,"continuousView");return view!=null&&view.visiblePagesReady()&&view.currentPage()==2;});
+            getInstrumentation().runOnMainSync(()->assertEquals(1,((ArrayList<PdfEngine.Sheet>)field(activity,"sheets")).get(2).marks.size()));
+        } finally { getInstrumentation().runOnMainSync(activity::finish); }
+    }
+
+    public void testLocalImportCreatesStableWritableCopy() throws Exception {
+        File external=fixture("shared-from-chat.pdf",2); MainActivity activity=open(fixture("import-start.pdf",1));
+        try {
+            getInstrumentation().runOnMainSync(()->{
+                try { java.lang.reflect.Method method=MainActivity.class.getDeclaredMethod("importLocal",Uri.class); method.setAccessible(true); method.invoke(activity,Uri.fromFile(external)); }
+                catch(Exception e) { throw new AssertionError(e); }
+            });
+            await(()->!(Boolean)field(activity,"busy")&&((String)field(activity,"sourceUri")).contains("/imports/")&&find(activity.getWindow().getDecorView(),"1 / 2")!=null);
+            Uri imported=Uri.parse((String)field(activity,"sourceUri")); assertEquals("file",imported.getScheme());
+            File copy=new File(imported.getPath()); assertTrue(copy.isFile()); assertTrue(copy.canWrite());
+            assertTrue(new DraftStore(context).exists((String)field(activity,"draftId")));
+        } finally { getInstrumentation().runOnMainSync(activity::finish); }
+    }
+
+    public void testEraserToolRemovesTappedAnnotation() throws Exception {
+        MainActivity activity=open(fixture("eraser.pdf",1));
+        try {
+            await(()->field(activity,"displayed")!=null&&((View)field(activity,"pageView")).isEnabled());
+            getInstrumentation().runOnMainSync(()->find(activity.getWindow().getDecorView(),"画笔").performClick());
+            tap((View)field(activity,"pageView"));
+            getInstrumentation().runOnMainSync(()->assertEquals(1,((ArrayList<PdfEngine.Sheet>)field(activity,"sheets")).get(0).marks.size()));
+            getInstrumentation().runOnMainSync(()->find(activity.getWindow().getDecorView(),"擦除").performClick());
+            tap((View)field(activity,"pageView"));
+            getInstrumentation().runOnMainSync(()->assertEquals(0,((ArrayList<PdfEngine.Sheet>)field(activity,"sheets")).get(0).marks.size()));
+        } finally { getInstrumentation().runOnMainSync(activity::finish); }
+    }
+
+    public void testSwitchingDocumentsRestoresEachDraft() throws Exception {
+        File first=fixture("draft-first.pdf",1),second=fixture("draft-second.pdf",2); MainActivity a=open(first);
+        getInstrumentation().runOnMainSync(()->{
+            ArrayList<PdfEngine.Sheet> pages=(ArrayList<PdfEngine.Sheet>)field(a,"sheets"); PdfEngine.Mark mark=new PdfEngine.Mark();
+            mark.type=PdfEngine.TEXT; mark.color=Color.BLACK; mark.width=.04f; mark.text="独立草稿"; mark.points.add(new PointF(.2f,.3f)); pages.get(0).marks.add(mark); call(a,"changed");
+        });
+        String firstId=(String)field(a,"draftId"); assertTrue(new DraftStore(context).dirty(firstId)); getInstrumentation().runOnMainSync(a::finish);
+        MainActivity b=open(second); getInstrumentation().runOnMainSync(()->assertEquals(0,((ArrayList<PdfEngine.Sheet>)field(b,"sheets")).get(0).marks.size())); getInstrumentation().runOnMainSync(b::finish);
+        MainActivity restored=open(first);
+        try { getInstrumentation().runOnMainSync(()->assertEquals("独立草稿",((ArrayList<PdfEngine.Sheet>)field(restored,"sheets")).get(0).marks.get(0).text)); }
+        finally { getInstrumentation().runOnMainSync(restored::finish); }
+    }
+
+    public void testLegacySingleDraftMigratesToDocumentStore() throws Exception {
+        File fixture=fixture("legacy-source.pdf",1),legacyPdf=new File(context.getFilesDir(),"current.pdf");
+        try(InputStream input=new FileInputStream(fixture);OutputStream output=new FileOutputStream(legacyPdf)) { byte[] bytes=new byte[8192]; int count; while((count=input.read(bytes))!=-1) output.write(bytes,0,count); }
+        ArrayList<PdfEngine.Sheet> pages=new ArrayList<>(); pages.add(new PdfEngine.Sheet(0)); String saved=PdfEngine.encode(pages);
+        PdfEngine.Mark mark=new PdfEngine.Mark(); mark.type=PdfEngine.TEXT; mark.color=Color.BLACK; mark.width=.04f; mark.text="旧草稿"; mark.points.add(new PointF(.2f,.3f)); pages.get(0).marks.add(mark);
+        org.json.JSONObject state=new org.json.JSONObject().put("name","旧版草稿.pdf").put("uri",Uri.fromFile(fixture).toString()).put("pages",PdfEngine.encode(pages))
+            .put("page",0).put("fraction",0).put("saved",saved).put("modify",true);
+        try(OutputStream output=new FileOutputStream(new File(context.getFilesDir(),"session.json"))) { output.write(state.toString().getBytes("UTF-8")); }
+        Intent intent=new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        MainActivity activity=(MainActivity)getInstrumentation().startActivitySync(intent);
+        try {
+            getInstrumentation().runOnMainSync(()->find(activity.getWindow().getDecorView(),"继续上次阅读").performClick());
+            await(()->field(activity,"pager")!=null&&!(Boolean)field(activity,"busy"));
+            String id=(String)field(activity,"draftId"); assertTrue(new DraftStore(context).exists(id));
+            getInstrumentation().runOnMainSync(()->assertEquals("旧草稿",((ArrayList<PdfEngine.Sheet>)field(activity,"sheets")).get(0).marks.get(0).text));
+        } finally { getInstrumentation().runOnMainSync(activity::finish); }
     }
 }

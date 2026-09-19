@@ -36,6 +36,9 @@ docs/verification-*/
 *.idsig
 *.log
 
+# Explicitly tracked distributable APKs
+!release-assets/PaperPDF-*.apk
+
 # Private project handoff and conversation records
 AGENTS.md
 项目交接.md

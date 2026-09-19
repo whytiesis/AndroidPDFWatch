@@ -7,7 +7,10 @@ import android.view.*;
 import java.util.*;
 
 public final class PageCanvas extends View {
-    interface Listener { void mark(PdfEngine.Mark mark); void text(float x,float y); void turn(int delta); }
+    interface Listener {
+        void mark(PdfEngine.Mark mark); void text(float x,float y); void turn(int delta);
+        void erase(int index); void select(int index);
+    }
     private Bitmap bitmap;
     private PdfEngine.Sheet sheet;
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
@@ -17,7 +20,7 @@ public final class PageCanvas extends View {
     private final GestureDetector gestures;
     private final Listener listener;
     private float zoom=1,dx,dy,lastX,lastY,startX,startY;
-    private int mode;
+    private int mode,selected=-1;
     private boolean night,multi,lastFitWidth;
     private PdfEngine.Mark active;
     public PageCanvas(Context context,Listener listener) {
@@ -43,13 +46,14 @@ public final class PageCanvas extends View {
         });
     }
     public void setPage(Bitmap b,PdfEngine.Sheet s) {
-        bitmap=b; sheet=s; active=null; zoom=1; dx=dy=0;
+        bitmap=b; sheet=s; active=null; selected=-1; zoom=1; dx=dy=0;
         lastFitWidth=landscape();
         if(lastFitWidth) { dy=Math.max(0,(b.getHeight()*fit(getWidth(),getHeight(),true)-getHeight())/2+12); }
         constrain(); invalidate();
     }
-    public void refresh(PdfEngine.Sheet s) { sheet=s; invalidate(); }
-    public void mode(int m) { mode=m; active=null; invalidate(); }
+    public void refresh(PdfEngine.Sheet s) { sheet=s; if(selected>=s.marks.size()) selected=-1; invalidate(); }
+    public void mode(int m) { mode=m; active=null; if(m!=PdfEngine.SELECT) selected=-1; invalidate(); }
+    public void selected(int index) { selected=index; invalidate(); }
     public void night(boolean n) { night=n; invalidate(); }
     private boolean landscape() { return getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE; }
     private float fit(int w,int h,boolean widthOnly) {
@@ -81,12 +85,18 @@ public final class PageCanvas extends View {
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c); c.drawColor(night?0xff202127:0xffE9E8E4);
         if(bitmap==null) return; bounds();
-        paint.setColor(Color.WHITE); paint.setShadowLayer(8,0,3,0x20000000); c.drawRect(rect,paint); paint.clearShadowLayer();
+        paint.setStyle(Paint.Style.FILL); paint.setPathEffect(null); paint.setColor(Color.WHITE); paint.setShadowLayer(8,0,3,0x20000000); c.drawRect(rect,paint); paint.clearShadowLayer();
         if(night) paint.setColorFilter(nightFilter);
         c.drawBitmap(bitmap,null,rect,paint); paint.setColorFilter(null);
         c.save(); c.clipRect(rect); c.translate(rect.left,rect.top);
         if(sheet!=null) PdfEngine.paintMarks(c,sheet.marks,rect.width(),rect.height());
         if(active!=null) PdfEngine.paintMarks(c,Collections.singletonList(active),rect.width(),rect.height());
+        if(sheet!=null&&selected>=0&&selected<sheet.marks.size()) {
+            RectF selectedBounds=PdfEngine.markBounds(sheet.marks.get(selected));
+            RectF outline=new RectF(selectedBounds.left*rect.width(),selectedBounds.top*rect.height(),selectedBounds.right*rect.width(),selectedBounds.bottom*rect.height());
+            outline.inset(-8,-8); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(3); paint.setColor(0xff6154C7);
+            paint.setPathEffect(new DashPathEffect(new float[]{10,7},0)); c.drawRoundRect(outline,8,8,paint); paint.setPathEffect(null);
+        }
         c.restore();
     }
     private PointF point(float x,float y) {
@@ -121,6 +131,9 @@ public final class PageCanvas extends View {
                     active=null;
                 } else if(!multi&&mode==PdfEngine.TEXT&&rect.contains(x,y)&&Math.hypot(x-startX,y-startY)<25) {
                     PointF p=point(x,y); listener.text(p.x,p.y);
+                } else if(!multi&&(mode==PdfEngine.ERASER||mode==PdfEngine.SELECT)&&rect.contains(x,y)&&Math.hypot(x-startX,y-startY)<25) {
+                    PointF p=point(x,y); int index=sheet==null?-1:PdfEngine.hitMark(sheet.marks,p.x,p.y);
+                    if(mode==PdfEngine.ERASER) listener.erase(index); else { selected=index; listener.select(index); }
                 } else if(!multi&&mode==0&&zoom<1.1&&Math.abs(x-startX)>90&&Math.abs(x-startX)>Math.abs(y-startY)*1.4) listener.turn(x<startX?1:-1);
                 invalidate(); return true;
             case MotionEvent.ACTION_CANCEL: active=null; invalidate(); return true;
