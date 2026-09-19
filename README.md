@@ -4,13 +4,21 @@
 
 ## 下载
 
+<<<<<<< HEAD
 [⬇️ 下载纸阅 PDF 1.5.0](https://raw.githubusercontent.com/whytiesis/AndroidPDFWatch/main/release-assets/PaperPDF-1.5.0.apk)
+=======
+[⬇️ 下载最新版 APK](https://github.com/whytiesis/AndroidPDFWatch/releases/latest)
+>>>>>>> 142424f46449e41868517aee47c8bdd262953036
 
 [查看全部历史版本](https://github.com/whytiesis/AndroidPDFWatch/releases)
 
 ## 安装与使用
 
+<<<<<<< HEAD
 当前版本为 1.5.0。下载后在安卓手机上打开 APK，并按系统提示允许该来源安装应用。支持 Android 6.0（API 23）及以上；沿用原发布签名，可覆盖安装 1.4.0。
+=======
+支持 Android 6.0（API 23）及以上。正式 APK 通过 GitHub Releases 发布，源码仓库不提交签名密钥、本地工具链或构建产物。
+>>>>>>> 142424f46449e41868517aee47c8bdd262953036
 
 1. 打开纸阅，点击“打开手机中的 PDF”。应用会列出设置中已授权目录的全部 PDF，可搜索文件名并直接打开；点击“从文件中选择”可从系统文件选择器选取其他 PDF。也可在文件管理器中使用“打开方式”或“分享”选择纸阅。
 2. 微信或 QQ 已下载的 PDF：进入首页右上角“设置”，点击“添加微信 / QQ 文件夹”授权一次，以后可在“打开手机中的 PDF”中直接浏览、搜索这些 PDF；也可以在微信或 QQ 中点击文件的“用其他应用打开”或“分享”，选择纸阅 PDF，再点“保存到纸阅并打开”建立稳定的本地副本。
