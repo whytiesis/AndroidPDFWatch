@@ -1,7 +1,7 @@
 # Android and Gradle outputs
 .gradle/
-**/build/
 local.properties
+**/build/
 captures/
 .externalNativeBuild/
 .cxx/
@@ -22,7 +22,7 @@ Thumbs.db
 .env
 .env.*
 
-# Local toolchains and downloaded archives
+# Local toolchains and downloads
 .tools/
 .downloads/
 
@@ -39,7 +39,8 @@ docs/verification-*/
 # Explicitly tracked distributable APKs
 !release-assets/PaperPDF-*.apk
 
-# Private project handoff and conversation records
+# Private handoff and conversation notes
 AGENTS.md
 项目交接.md
 docs/对话与需求记录.md
+docs/项目交接-*.md

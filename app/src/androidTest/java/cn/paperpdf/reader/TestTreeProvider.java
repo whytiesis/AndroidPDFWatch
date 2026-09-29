@@ -19,7 +19,12 @@ public class TestTreeProvider extends ContentProvider {
                 DocumentsContract.Document.COLUMN_LAST_MODIFIED});
         java.util.List<String> parts=uri.getPathSegments();
         String folder=parts.size()>1&&"children".equals(parts.get(parts.size()-1))?parts.get(parts.size()-2):uri.getLastPathSegment();
-        if("root".equals(folder)) {
+        if("word-root".equals(folder)) {
+            add(rows,"docx","中文报告.DOCX","application/octet-stream",300);
+            add(rows,"doc","旧报告.doc","application/msword",200);
+            add(rows,"mime-word","无后缀",DocumentFormats.DOCX,100);
+            add(rows,"bad-word","不是文档.zip","application/zip",0);
+        } else if("root".equals(folder)) {
             add(rows,"chat","WeChat",DocumentsContract.Document.MIME_TYPE_DIR,0);
             add(rows,"bad","not a document.txt","text/plain",0);
             add(rows,"qq-pdf","QQ直接文件.PDF","application/octet-stream",50);

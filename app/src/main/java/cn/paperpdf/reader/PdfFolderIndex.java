@@ -49,7 +49,7 @@ public final class PdfFolderIndex {
                     if(id==null||name==null) continue;
                     if(DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                         if(directory.depth<MAX_DEPTH) directories.addLast(new Directory(id,directory.depth+1));
-                    } else if("application/pdf".equalsIgnoreCase(mime)||name.toLowerCase(java.util.Locale.ROOT).endsWith(".pdf")) {
+                    } else if(DocumentFormats.supported(name,mime)) {
                         pdfs.add(new Entry(DocumentsContract.buildDocumentUriUsingTree(tree,id),name,cursor.isNull(3)?0:cursor.getLong(3)));
                     }
                 }

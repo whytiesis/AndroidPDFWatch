@@ -1,4 +1,4 @@
-Paper PDF / 纸阅 PDF 1.1.0
+Paper / 纸阅 1.6.0
 
 PDFBox-Android 2.0.27.0
 Copyright 2015-2023 Tom Roush and contributors.
@@ -32,3 +32,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+
+Word support: Apache POI 5.4.1, POI Scratchpad 5.4.1, Apache Commons, SparseBitSet and Log4j API.
+See the accompanying component license and NOTICE files in this directory.
+Android adaptation: desktop CleanerUtil removed from the POI jar at build time and
+replaced by a local adapter returning UNMAP_SUPPORTED=false. DOC files use InputStream.
+Other POI classes are unmodified. All components operate offline.

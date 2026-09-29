@@ -11,10 +11,10 @@ public class ShareProvider extends ContentProvider {
     @Override public boolean onCreate() { return true; }
     private File file(Uri uri) throws FileNotFoundException {
         String name=uri.getLastPathSegment();
-        if(name==null || !name.matches("[a-zA-Z0-9_-]+\\.pdf")) throw new FileNotFoundException();
+        if(name==null || !name.matches("[a-zA-Z0-9_-]+\\.(pdf|docx)")) throw new FileNotFoundException();
         return new File(getContext().getCacheDir(),"shared/"+name);
     }
-    @Override public String getType(Uri uri) { return "application/pdf"; }
+    @Override public String getType(Uri uri) { return uri.getLastPathSegment()!=null&&uri.getLastPathSegment().endsWith(".docx")?DocumentFormats.DOCX:"application/pdf"; }
     @Override public ParcelFileDescriptor openFile(Uri uri,String mode) throws FileNotFoundException {
         if(!"r".equals(mode)) throw new FileNotFoundException("Read only");
         return ParcelFileDescriptor.open(file(uri),ParcelFileDescriptor.MODE_READ_ONLY);
@@ -23,7 +23,7 @@ public class ShareProvider extends ContentProvider {
         String[] columns=projection!=null?projection:new String[]{OpenableColumns.DISPLAY_NAME,OpenableColumns.SIZE};
         MatrixCursor c=new MatrixCursor(columns);
         try { File f=file(uri); Object[] row=new Object[columns.length];
-            for(int i=0;i<columns.length;i++) { if(OpenableColumns.DISPLAY_NAME.equals(columns[i])) row[i]="纸阅-已编辑.pdf"; else if(OpenableColumns.SIZE.equals(columns[i])) row[i]=f.length(); }
+            for(int i=0;i<columns.length;i++) { if(OpenableColumns.DISPLAY_NAME.equals(columns[i])) row[i]="纸阅-已编辑"+(f.getName().endsWith(".docx")?".docx":".pdf"); else if(OpenableColumns.SIZE.equals(columns[i])) row[i]=f.length(); }
             c.addRow(row);
         } catch(IOException ignored) { }
         return c;

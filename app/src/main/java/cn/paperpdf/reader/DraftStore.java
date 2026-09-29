@@ -26,6 +26,7 @@ final class DraftStore {
     }
 
     File pdf(String id) { return new File(directory,id+".pdf"); }
+    File word(String id) { return new File(directory,id+".docx"); }
     File state(String id) { return new File(directory,id+".json"); }
     boolean exists(String id) { return !id.isEmpty()&&pdf(id).isFile()&&state(id).isFile(); }
 
@@ -50,7 +51,7 @@ final class DraftStore {
         if(!exists(id)) return false;
         try {
             JSONObject value=read(id);
-            return !value.optString("saved").equals(value.optString("pages"));
+            return !value.optString("saved").equals(value.optString("pages"))||!value.optString("savedWord","{}").equals(value.optString("wordEdits","{}"));
         } catch(Exception ignored) { return false; }
     }
 

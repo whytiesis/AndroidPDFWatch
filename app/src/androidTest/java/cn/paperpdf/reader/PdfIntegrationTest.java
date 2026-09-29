@@ -371,7 +371,7 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
         MainActivity activity=(MainActivity)getInstrumentation().startActivitySync(intent);
         final MainActivity home=activity;
         getInstrumentation().runOnMainSync(()->{
-            assertNotNull(find(home.getWindow().getDecorView(),"打开手机中的 PDF"));
+            assertNotNull(find(home.getWindow().getDecorView(),"打开手机中的文档"));
             assertNotNull(find(home.getWindow().getDecorView(),"⚙"));
             assertNotNull(find(home.getWindow().getDecorView(),"文件留在设备上"));
             assertNull(find(home.getWindow().getDecorView(),"试读示例文档"));
@@ -379,7 +379,7 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
         });
         getInstrumentation().waitForIdleSync();
         getInstrumentation().runOnMainSync(()->{
-            assertNotNull(find(home.getWindow().getDecorView(),"PDF 文件目录"));
+            assertNotNull(find(home.getWindow().getDecorView(),"文档目录"));
             assertNotNull(find(home.getWindow().getDecorView(),"添加普通目录"));
             assertNotNull(find(home.getWindow().getDecorView(),"添加微信 / QQ 文件夹"));
             assertNotNull(find(home.getWindow().getDecorView(),"连续滚动阅读"));

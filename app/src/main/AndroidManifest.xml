@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:allowBackup="false" android:label="纸阅 PDF" android:icon="@drawable/ic_launcher"
+    <application android:allowBackup="false" android:label="纸阅" android:icon="@drawable/ic_launcher"
         android:theme="@style/AppTheme" android:supportsRtl="true" android:largeHeap="true">
         <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize" android:screenOrientation="fullUser">
@@ -13,6 +13,8 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:mimeType="application/pdf"/>
+                <data android:mimeType="application/msword"/>
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/>
                 <data android:mimeType="application/x-pdf"/>
                 <data android:mimeType="application/octet-stream"/>
             </intent-filter>
@@ -20,6 +22,8 @@
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="application/pdf"/>
+                <data android:mimeType="application/msword"/>
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/>
                 <data android:mimeType="application/x-pdf"/>
                 <data android:mimeType="application/octet-stream"/>
             </intent-filter>

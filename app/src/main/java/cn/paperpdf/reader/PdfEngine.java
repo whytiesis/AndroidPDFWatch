@@ -156,7 +156,7 @@ public final class PdfEngine {
                     stream.drawImage(LosslessFactory.createFromImage(out,layer),matrix);
                 } finally { layer.recycle(); }
             }
-            out.getDocumentInformation().setProducer("Paper PDF / 纸阅 PDF");
+            out.getDocumentInformation().setProducer("Paper / 纸阅");
             out.save(destination);
         }
     }

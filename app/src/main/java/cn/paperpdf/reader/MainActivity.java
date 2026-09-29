@@ -37,6 +37,9 @@ public class MainActivity extends Activity {
     private PdfRenderer renderer;
     private File source,pendingExport;
     private DraftStore drafts;
+    private WordEngine word;
+    private boolean legacyWord;
+    private String savedWord="{}";
     private String draftId="",name="",sourceUri="",savedModel="",saveStatus="已打开";
     private ArrayList<PdfEngine.Sheet> sheets=new ArrayList<>();
     private final ArrayDeque<String> undo=new ArrayDeque<>(),redo=new ArrayDeque<>();
@@ -196,15 +199,15 @@ public class MainActivity extends Activity {
         LinearLayout brand=new LinearLayout(this); brand.setGravity(Gravity.CENTER_VERTICAL);
         TextView logo=label("▤",29,Color.WHITE,true); logo.setGravity(Gravity.CENTER); logo.setBackground(shape(PURPLE,16));
         brand.addView(logo,new LinearLayout.LayoutParams(dp(52),dp(52)));
-        LinearLayout names=vertical(); names.setPadding(dp(13),0,0,0); names.addView(label("纸阅 PDF",22,INK,true)); names.addView(label("PAPER · READ & ANNOTATE",10,MUTED,false)); brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout names=vertical(); names.setPadding(dp(13),0,0,0); names.addView(label("纸阅",22,INK,true)); names.addView(label("PAPER · READ & ANNOTATE",10,MUTED,false)); brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));
         TextView settingsButton=iconButton("⚙","设置",this::openSettings); brand.addView(settingsButton,new LinearLayout.LayoutParams(dp(52),dp(48)));
         body.addView(brand); space(body,34);
         body.addView(label("每一页，都有新想法。",27,INK,true)); space(body,9);
         body.addView(label("打开你的文档，让阅读与记录在一起。",14,MUTED,false)); space(body,24);
         LinearLayout hero=vertical(); hero.setPadding(dp(24),dp(26),dp(24),dp(24)); hero.setBackground(shape(0xffEDEAF9,24));
-        hero.addView(label("PDF",42,PURPLE,true)); space(hero,12); hero.addView(label("你的随身文档空间",20,INK,true)); space(hero,8);
+        hero.addView(label("PDF · Word",32,PURPLE,true)); space(hero,12); hero.addView(label("你的随身文档空间",20,INK,true)); space(hero,8);
         hero.addView(label("本地阅读 · 自由批注 · 随时保存\n双指缩放，清晰查看每一处细节",14,0xff706A89,false)); space(hero,22);
-        hero.addView(button("＋  打开手机中的 PDF",()->confirmLeave(this::openLibrary),true),new LinearLayout.LayoutParams(-1,dp(52)));
+        hero.addView(button("＋  打开手机中的文档",()->confirmLeave(this::openLibrary),true),new LinearLayout.LayoutParams(-1,dp(52)));
         body.addView(hero); space(body,22);
         String last=getPreferences(0).getString("last_draft","");
         boolean hasDraft=drafts.exists(last),hasLegacy=new File(getFilesDir(),"session.json").isFile()&&new File(getFilesDir(),"current.pdf").isFile();
@@ -245,13 +248,13 @@ public class MainActivity extends Activity {
         root.addView(top,new LinearLayout.LayoutParams(-1,dp(64)));
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(true); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout body=vertical(); body.setPadding(dp(20),dp(10),dp(20),dp(26)); scroll.addView(body);
-        body.addView(label("PDF 文件目录",18,INK,true)); space(body,7);
-        body.addView(label("“打开手机中的 PDF”会列出下面目录里的全部 PDF。目录只在你授权后读取。",13,MUTED,false)); space(body,14);
+        body.addView(label("文档目录",18,INK,true)); space(body,7);
+        body.addView(label("“打开手机中的文档”会列出下面目录里的 PDF 和 Word。目录只在你授权后读取。",13,MUTED,false)); space(body,14);
         JSONArray saved=folders();
         if(saved.length()==0) { TextView empty=label("还没有添加目录",14,MUTED,false); empty.setPadding(dp(12),dp(14),dp(12),dp(14)); body.addView(empty); }
         for(int i=0;i<saved.length();i++) {
             JSONObject item=saved.optJSONObject(i); if(item==null) continue;
-            final String uri=item.optString("uri"), display=item.optString("name","PDF 文件夹"), kind=item.optString("kind","normal");
+            final String uri=item.optString("uri"), display=item.optString("name","文档文件夹"), kind=item.optString("kind","normal");
             LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(12),dp(11),dp(7),dp(11)); row.setBackground(shape(Color.WHITE,14));
             LinearLayout text=vertical(); text.addView(label(display,14,INK,true)); text.addView(label("微信 / QQ 文件夹".equals(kind)?"微信 / QQ":"普通目录",11,MUTED,false));
             row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
@@ -277,7 +280,7 @@ public class MainActivity extends Activity {
         Switch nightSwitch=new Switch(this); nightSwitch.setText("夜间阅读"); nightSwitch.setTextSize(15); nightSwitch.setTextColor(themeColor(INK)); nightSwitch.setChecked(night); nightSwitch.setPadding(0,dp(7),0,dp(7));
         nightSwitch.setOnCheckedChangeListener((view,checked)->{ night=checked; getPreferences(0).edit().putBoolean("night",checked).apply(); settings(); }); appearance.addView(nightSwitch);
         appearance.addView(label("文件只保存在设备本地，不上传。",12,MUTED,false)); body.addView(appearance);
-        space(body,28); body.addView(label("纸阅 PDF v"+BuildConfig.VERSION_NAME,13,MUTED,false));
+        space(body,28); body.addView(label("纸阅 v"+BuildConfig.VERSION_NAME,13,MUTED,false));
         space(body,8); TextView help=label("使用说明与兼容范围",14,PURPLE,true); help.setPadding(0,dp(10),0,dp(10)); help.setOnClickListener(v->help()); body.addView(help);
     }
     private JSONArray recent() {
@@ -292,9 +295,9 @@ public class MainActivity extends Activity {
         } catch(JSONException ignored) { }
     }
     private void pick() {
-        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE);
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES,DocumentFormats.TYPES).addCategory(Intent.CATEGORY_OPENABLE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        try { startActivityForResult(intent,OPEN); } catch(ActivityNotFoundException e) { error("未找到系统文件选择器。请从文件管理器选择 PDF，使用纸阅打开。"); }
+        try { startActivityForResult(intent,OPEN); } catch(ActivityNotFoundException e) { error("未找到系统文件选择器。请从文件管理器选择 PDF 或 Word，使用纸阅打开。"); }
     }
     private void openLibrary() {
         task("正在扫描已添加目录…",()->{
@@ -320,7 +323,7 @@ public class MainActivity extends Activity {
         ArrayAdapter<String> adapter=new ArrayAdapter<>(dialogContext(),android.R.layout.simple_list_item_1);
         for(PdfFolderIndex.Entry file:shown) adapter.add(file.name);
         list.setAdapter(adapter); panel.addView(list,new LinearLayout.LayoutParams(-1,dp(390)));
-        AlertDialog dialog=dialog().setTitle("手机中的 PDF").setView(panel)
+        AlertDialog dialog=dialog().setTitle("手机中的文档").setView(panel)
             .setPositiveButton("从文件中选择",(d,w)->pickChat())
             .setNeutralButton("设置目录",(d,w)->settings()).setNegativeButton("关闭",null).create();
         search.addTextChangedListener(new android.text.TextWatcher() {
@@ -341,14 +344,14 @@ public class MainActivity extends Activity {
         }
     }
     private void pickChat() {
-        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES,DocumentFormats.TYPES).addCategory(Intent.CATEGORY_OPENABLE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         if(Build.VERSION.SDK_INT>=26) {
             Uri downloads=DocumentsContract.buildDocumentUri("com.android.externalstorage.documents","primary:Download");
             intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,downloads);
         }
         try { startActivityForResult(intent,OPEN); }
-        catch(ActivityNotFoundException e) { error("系统文件选择器不可用。请在微信或 QQ 中找到文件，点击“用其他应用打开”并选择纸阅 PDF。"); }
+        catch(ActivityNotFoundException e) { error("系统文件选择器不可用。请在微信或 QQ 中找到文件，点击“用其他应用打开”并选择纸阅。"); }
     }
     private JSONArray folders() {
         try {
@@ -365,7 +368,7 @@ public class MainActivity extends Activity {
     private void chooseFolder(String kind) {
         pendingFolderKind=kind;
         dialog().setTitle("添加"+kind)
-            .setMessage("选择一个包含 PDF 的可访问文件夹，授权一次后即可在文件库浏览。Android 11 及以上无法授予其他应用的 Android/data 私有目录；遇到微信或 QQ 私有文件，请在聊天中点“用其他应用打开”或“分享”。")
+            .setMessage("选择一个包含 PDF 或 Word 的可访问文件夹，授权一次后即可在文件库浏览。Android 11 及以上无法授予其他应用的 Android/data 私有目录；遇到微信或 QQ 私有文件，请在聊天中点“用其他应用打开”或“分享”。")
             .setPositiveButton("选择文件夹",(d,w)->{
                 Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -389,15 +392,15 @@ public class MainActivity extends Activity {
         } catch(JSONException e) { error("保存文件夹失败，请重新选择。"); }
     }
     private void browseFolder(Uri uri) {
-        task("正在查找 PDF…",()->PdfFolderIndex.scan(getContentResolver(),uri),files->{
-            if(files.isEmpty()) { error("这个文件夹中没有可访问的 PDF。可试试“从文件中选择”（会优先打开 Download），或在微信 / QQ 中用“打开方式”发送给纸阅。"); return; }
+        task("正在查找文档…",()->PdfFolderIndex.scan(getContentResolver(),uri),files->{
+            if(files.isEmpty()) { error("这个文件夹中没有可访问的 PDF 或 Word。可试试“从文件中选择”（会优先打开 Download），或在微信 / QQ 中用“打开方式”发送给纸阅。"); return; }
             LinearLayout panel=vertical(); panel.setPadding(dp(16),0,dp(16),dp(8));
             EditText search=new EditText(dialogContext()); search.setSingleLine(true); search.setHint("搜索文件名（共 "+files.size()+" 个）"); panel.addView(search);
             ListView list=new ListView(this); ArrayList<PdfFolderIndex.Entry> shown=new ArrayList<>(files);
             ArrayAdapter<String> adapter=new ArrayAdapter<>(dialogContext(),android.R.layout.simple_list_item_1);
             for(PdfFolderIndex.Entry file:shown) adapter.add(file.name);
             list.setAdapter(adapter); panel.addView(list,new LinearLayout.LayoutParams(-1,dp(390)));
-            AlertDialog dialog=dialog().setTitle("聊天文件夹中的 PDF").setView(panel)
+            AlertDialog dialog=dialog().setTitle("聊天文件夹中的文档").setView(panel)
                 .setNegativeButton("关闭",null).setNeutralButton("移除此文件夹",(d,w)->removeFolder(uri)).create();
             search.addTextChangedListener(new android.text.TextWatcher() {
                 public void beforeTextChanged(CharSequence s,int start,int count,int after) { }
@@ -461,7 +464,7 @@ public class MainActivity extends Activity {
         byte[] b=new byte[65536]; int n; while((n=input.read(b))!=-1) output.write(b,0,n); output.flush();
     }
     private void offerImport(Uri uri) {
-        dialog().setTitle("从其他应用打开 PDF")
+        dialog().setTitle("从其他应用打开文档")
             .setMessage("保存到纸阅后，微信或 QQ 的临时分享权限失效也能继续阅读和编辑，并可直接覆盖这份本地副本。")
             .setPositiveButton("保存到纸阅并打开",(d,w)->importLocal(uri))
             .setNeutralButton("仅本次打开",(d,w)->openUri(uri,null)).setNegativeButton("取消",null).show();
@@ -472,7 +475,7 @@ public class MainActivity extends Activity {
             File directory=new File(getFilesDir(),"imports");
             if(!directory.exists()&&!directory.mkdirs()) throw new IOException("无法创建本地文档目录");
             String safe=display.replaceAll("[\\\\/:*?\"<>|]","_");
-            if(!safe.toLowerCase(Locale.ROOT).endsWith(".pdf")) safe+=".pdf";
+            if(safe.isEmpty()) safe="文档";
             File target=new File(directory,System.currentTimeMillis()+"-"+safe);
             try(InputStream input=getContentResolver().openInputStream(uri);OutputStream output=new FileOutputStream(target)) { copy(input,output); }
             return target;
@@ -484,14 +487,26 @@ public class MainActivity extends Activity {
         String nextDraft=drafts.id(positionKey(uri.toString()));
         if(password==null&&drafts.dirty(nextDraft)) { restoreDraft(nextDraft); return; }
         if(continuousView!=null) { continuousView.dispose(); continuousView=null; }
-        task("正在打开 PDF…",()->{
+        task("正在打开文档…",()->{
             File stage=new File(getCacheDir(),"incoming-"+nextDraft+".pdf");
             try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(stage)) { copy(in,out); }
-            return prepare(stage,password,drafts.pdf(nextDraft));
+            String format=DocumentFormats.detect(stage);
+            if(!"pdf".equals(format)) {
+                WordEngine candidate=WordEngine.open(stage);
+                File baseStage=new File(getCacheDir(),"word-base-"+nextDraft+".docx"); candidate.saveBase(baseStage);
+                File preview=new File(getCacheDir(),"word-preview-"+nextDraft+".pdf");candidate.render(preview);
+                int count=prepare(preview,null,drafts.pdf(nextDraft));
+                atomicCopy(baseStage,drafts.word(nextDraft));
+                word=candidate;legacyWord="doc".equals(format);canModify=!candidate.restricted;return count;
+            }
+            int count=prepare(stage,password,drafts.pdf(nextDraft));
+            if(count!=-1) {word=null;legacyWord=false;}
+            return count;
         },result->{
             if(result==-1) { password(uri); return; }
             draftId=nextDraft; source=drafts.pdf(draftId); getPreferences(0).edit().putString("active_draft",draftId).putString("last_draft",draftId).apply();
             name=fileName(uri); sourceUri=uri.toString(); saveStatus="已打开"; opened(result); remember(); persist();
+            if(word!=null&&legacyWord) dialog().setTitle("已读取旧版 DOC").setMessage("此文档将以 DOCX 副本保存，原 DOC 保留。旧格式使用兼容排版，复杂表格、图片和页眉页脚可能与原稿不同；重要文档请核对。").setPositiveButton("继续",null).show();
         });
     }
     private int prepare(File stage,String password,File target) throws IOException {
@@ -526,7 +541,13 @@ public class MainActivity extends Activity {
     }
     private void opened(int count) {
         sheets.clear(); for(int i=0;i<count;i++) sheets.add(new PdfEngine.Sheet(i));
-        current=0; readingFraction=0; loadPosition(); mode=0; readerChromeVisible=true; undo.clear(); redo.clear(); savedModel=PdfEngine.encode(sheets); viewer();
+        current=0; readingFraction=0; loadPosition(); mode=0; readerChromeVisible=true; undo.clear(); redo.clear(); savedWord=word==null?"{}":word.editState();
+        if(word!=null&&!word.annotations().isEmpty()) try {
+            ArrayList<PdfEngine.Sheet> saved=PdfEngine.decode(word.annotations());
+            boolean valid=saved.size()==count;for(PdfEngine.Sheet sheet:saved) if(sheet.original<0||sheet.original>=count) valid=false;
+            if(valid) sheets=saved;
+        } catch(JSONException ignored) { }
+        savedModel=PdfEngine.encode(sheets); viewer();
     }
     private void closeRenderer() { if(renderer!=null) { renderer.close(); renderer=null; } }
     private void viewer() {
@@ -568,6 +589,7 @@ public class MainActivity extends Activity {
         if(!continuous&&returnToContinuous) {
             TextView backToScroll=compactButton("↩ 返回滚动",this::returnToContinuous); LinearLayout.LayoutParams backParams=new LinearLayout.LayoutParams(dp(86),dp(38)); backParams.rightMargin=dp(2); tools.addView(backToScroll,backParams);
         }
+        if(word!=null) {TextView bodyEdit=compactButton("编辑正文",this::editWordBody);tools.addView(bodyEdit,new LinearLayout.LayoutParams(dp(76),dp(38)));}
         modes.clear(); String[] labels=continuous?new String[]{"☝ 阅读"}:new String[]{"☝ 阅读","✎ 画笔","▧ 荧光","T 文字","⌫ 擦除","▣ 选择"};
         for(int i=0;i<labels.length;i++) { final int index=i; TextView v=compactButton(labels[i],()->setMode(index)); modes.add(v);
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(66),dp(38)); p.setMargins(dp(2),0,dp(2),0); tools.addView(v,p); }
@@ -585,7 +607,7 @@ public class MainActivity extends Activity {
     }
     private void setMode(int next) {
         if(continuous&&next!=0) { editCurrentPage(); return; }
-        if(next!=0&&!canModify) { error("作者已限制此 PDF 的修改权限，可以继续阅读。"); return; }
+        if(next!=0&&!canModify) { error("作者已限制此文档的修改权限，可以继续阅读。"); return; }
         mode=next; pageView.mode(mode);
         String[] help={"轻触隐藏 / 显示工具栏 · 双指缩放 · 左右翻页","在页面上手写标记 · 双指缩放或移动","拖出矩形标记区域 · 双指缩放或移动","点击页面放置文字 · 支持中文、多行输入","点击已有批注即可删除","点击批注后可编辑、换色或删除"}; hint.setText(continuous?"轻触隐藏 / 显示工具栏 · 上下滚动 · 可直接编辑当前页":help[mode]);
         for(int i=0;i<modes.size();i++) { modes.get(i).setTextColor(i==mode?Color.WHITE:(night?0xffCEC2FF:PURPLE)); modes.get(i).setBackground(shape(i==mode?PURPLE:0xffEDEAF9,10)); }
@@ -616,7 +638,7 @@ public class MainActivity extends Activity {
         });
     }
     private void go(int index) { if(busy||index<0||index>=sheets.size()) return; current=index; readingFraction=0; if(continuous&&continuousView!=null) continuousView.jumpToPage(index); else render(); persist(); }
-    private boolean dirty() { return !savedModel.equals(PdfEngine.encode(sheets)); }
+    private boolean dirty() { return !savedModel.equals(PdfEngine.encode(sheets))||(word!=null&&!savedWord.equals(word.editState())); }
     private void update() {
         if(!viewing) return; pager.setText((current+1)+" / "+sheets.size()+"  ⌄");
         boolean operationStatus=saveStatus.startsWith("正在")||saveStatus.contains("失败")||saveStatus.contains("未完成")||saveStatus.contains("已取消");
@@ -625,18 +647,22 @@ public class MainActivity extends Activity {
         saveButton.setText(dirty()?"保存 •":"保存");
     }
     private void checkpoint() {
-        undo.push(PdfEngine.encode(sheets)); if(undo.size()>30) undo.removeLast(); redo.clear();
+        undo.push(editSnapshot()); if(undo.size()>30) undo.removeLast(); redo.clear();
     }
     private void changed() { saveStatus="编辑中 · 草稿已自动保存"; if(continuousView!=null) continuousView.invalidate(); else pageView.refresh(sheets.get(current)); update(); persist(); }
     private void undo() {
         if(undo.isEmpty()) { toast("没有可撤销的修改"); return; }
-        redo.push(PdfEngine.encode(sheets)); applyState(undo.pop());
+        redo.push(editSnapshot()); applyState(undo.pop());
     }
     private void redo() {
         if(redo.isEmpty()) { toast("没有可重做的修改"); return; }
-        undo.push(PdfEngine.encode(sheets)); applyState(redo.pop());
+        undo.push(editSnapshot()); applyState(redo.pop());
     }
     private void applyState(String json) {
+        if(json.startsWith("{")) {
+            try {JSONObject state=new JSONObject(json); rebuildWord(state.getString("word"),state.getString("pages"),null);}
+            catch(Exception e) {error(friendly(e));} return;
+        }
         try { sheets=PdfEngine.decode(json); current=Math.min(current,sheets.size()-1); saveStatus="编辑中 · 草稿已自动保存"; if(continuous) reloadContinuous(); else render(); persist(); }
         catch(JSONException e) { error(friendly(e)); }
     }
@@ -707,7 +733,7 @@ public class MainActivity extends Activity {
     }
     private void more() {
         capturePosition();
-        String[] items={"打开其他 PDF","搜索文字","页面管理","顺时针旋转本页","删除本页","重做","分享 PDF",night?"切换日间阅读":"切换夜间阅读",continuous?"切换单页左右翻页":"切换连续滚动阅读","使用说明"};
+        String[] items={"打开其他文档","搜索文字","页面管理","顺时针旋转本页","删除本页","重做",(word==null?"分享 PDF":"分享 Word / PDF"),night?"切换日间阅读":"切换夜间阅读",continuous?"切换单页左右翻页":"切换连续滚动阅读","使用说明"};
         dialog().setTitle("文档工具").setItems(items,(d,n)->{
             switch(n) {
                 case 0: confirmLeave(this::pick); break;
@@ -716,14 +742,14 @@ public class MainActivity extends Activity {
                 case 3: if(editable()) { checkpoint(); PdfEngine.rotate(sheets.get(current)); saveStatus="编辑中 · 草稿已自动保存"; if(continuous) reloadContinuous(); else render(); persist(); } break;
                 case 4: deletePage(); break;
                 case 5: redo(); break;
-                case 6: export(true); break;
+                case 6: if(word==null) export(true); else dialog().setTitle("分享文档").setItems(new String[]{"Word（DOCX）","PDF（保留页面排版）"},(x,k)->{if(k==0) exportWord(true,false);else export(true);}).show(); break;
                 case 7: capturePosition(); night=!night; getPreferences(0).edit().putBoolean("night",night).apply(); viewer(); break;
                 case 8: capturePosition(); continuous=!continuous; returnToContinuous=false; getPreferences(0).edit().putBoolean("continuous",continuous).apply(); viewer(); break;
                 case 9: help(); break;
             }
         }).show();
     }
-    private boolean editable() { if(canModify) return true; error("此 PDF 的修改权限受限。"); return false; }
+    private boolean editable() { if(canModify) return true; error("此文档的修改权限受限。"); return false; }
     private void deletePage() {
         if(!editable()) return;
         if(sheets.size()==1) { toast("至少需要保留一页"); return; }
@@ -747,7 +773,7 @@ public class MainActivity extends Activity {
         dialog().setTitle("搜索文档文字").setMessage("扫描图片中的文字暂不支持识别。")
             .setView(input).setPositiveButton("搜索",(d,w)->{
                 String q=input.getText().toString().trim(); if(q.isEmpty()) return;
-                task("正在搜索…",()->PdfEngine.search(source,sheets,q),found->{
+                task("正在搜索…",()->word==null?PdfEngine.search(source,sheets,q):word.search(sheets,q),found->{
                     if(found.isEmpty()) { toast("未找到匹配文字"); return; }
                     String[] hits=new String[found.size()]; for(int i=0;i<hits.length;i++) hits[i]="第 "+(found.get(i)+1)+" 页";
                     dialog().setTitle("找到 "+hits.length+" 个匹配页面").setItems(hits,(dialog,n)->go(found.get(n))).setNegativeButton("关闭",null).show();
@@ -755,14 +781,94 @@ public class MainActivity extends Activity {
             }).setNegativeButton("取消",null).show();
     }
     private void help() {
-        dialog().setTitle("纸阅 PDF · 使用说明 · v"+BuildConfig.VERSION_NAME)
-            .setMessage("阅读：阅读模式轻触页面隐藏或显示工具栏，隐藏时按返回先呼出工具栏；双击仍用于缩放。屏幕方向跟随系统自动旋转设置，横屏单页适合页宽，可上下拖动阅读长页，左右安全边距避开导航栏和挖孔。连续滚动时可直接点“编辑本页”，完成后返回原滚动位置。\n\n修改：画笔手写、矩形荧光、中文文字、点按擦除；“选择”可编辑文字、换色或删除批注。支持页面旋转、删除、调整顺序，以及撤销和重做。\n\n导入：从微信、QQ 或其他应用打开时，可一键“保存到纸阅并打开”。本地副本不依赖临时分享权限，并可直接覆盖保存。\n\n保存：标题下方会显示正在保存、已写入原文件、已另存副本或写入失败。失败时编辑草稿仍保留。覆盖原文件前会备份并校验写入；批注作为页面内容写入，其他 PDF 阅读器可查看。\n\n草稿：每份文档单独自动保存编辑模型和阅读位置，可以直接切换文档；最近列表会标出尚未导出的编辑草稿。清空最近列表不会删除草稿。\n\n边界：不支持直接改写原有段落、OCR 或交互表单。加密 PDF 需输入合法密码；另存副本不保留加密。\n\n隐私：无需网络权限，不上传文件。\n\n开源组件：PDFBox-Android 2.0.27.0（Apache 2.0）、Apache PDFBox / FontBox、Bouncy Castle（MIT）。")
+        dialog().setTitle("纸阅 · 使用说明 · v"+BuildConfig.VERSION_NAME)
+            .setMessage("阅读：阅读模式轻触页面隐藏或显示工具栏，隐藏时按返回先呼出工具栏；双击仍用于缩放。屏幕方向跟随系统自动旋转设置，横屏单页适合页宽，可上下拖动阅读长页，左右安全边距避开导航栏和挖孔。连续滚动时可直接点“编辑本页”，完成后返回原滚动位置。\n\n修改：画笔手写、矩形荧光、中文文字、点按擦除；“选择”可编辑文字、换色或删除批注。支持页面旋转、删除、调整顺序，以及撤销和重做。\n\n导入：从微信、QQ 或其他应用打开时，可一键“保存到纸阅并打开”。本地副本不依赖临时分享权限，并可直接覆盖保存。\n\n保存：标题下方会显示正在保存、已写入原文件、已另存副本或写入失败。失败时编辑草稿仍保留。覆盖原文件前会备份并校验写入；批注作为页面内容写入，其他 PDF 阅读器可查看。\n\n草稿：每份文档单独自动保存编辑模型和阅读位置，可以直接切换文档；最近列表会标出尚未导出的编辑草稿。清空最近列表不会删除草稿。\n\nWord：支持 DOCX 正文与表格单元格文字修改、批注、Word 另存和覆盖。旧 DOC 转为 DOCX 副本；正文修改可能改变分页，应先改正文再添加批注。页面旋转、删除、调序请导出 PDF 保留效果。Word 采用兼容排版，复杂公式、浮动对象、页眉页脚和修订显示不保证与 Office 一致；原 DOCX 未编辑的部件随 Word 保存保留。\n\n边界：PDF 不支持直接改写原有段落、OCR 或交互表单。加密 PDF 需输入合法密码；另存副本不保留加密。\n\n隐私：无需网络权限，不上传文件。\n\n开源组件：PDFBox-Android 2.0.27.0（Apache 2.0）、Apache PDFBox / FontBox、Bouncy Castle（MIT）。")
             .setPositiveButton("知道了",null).show();
     }
     private void saveDialog() {
+        if(word!=null) {
+            String[] choices=legacyWord?new String[]{"另存为 Word（DOCX）","另存为 PDF"}:new String[]{"覆盖原 Word 文件","另存为 Word（DOCX）","另存为 PDF"};
+            dialog().setTitle("保存 Word 文档").setItems(choices,(d,n)->{
+                if(legacyWord) {if(n==0) exportWord(false,false);else export(false);}
+                else {if(n==0) exportWord(false,true);else if(n==1) exportWord(false,false);else export(false);}
+            }).setNegativeButton("取消",null).show();return;
+        }
         dialog().setTitle("保存 PDF").setMessage("覆盖保存会将修改写回当前本地文件；另存为可保留原文件。")
             .setPositiveButton("覆盖原文件",(d,w)->{ if(editable()) export(false,true); })
             .setNeutralButton("另存为 PDF",(d,w)->export(false)).setNegativeButton("取消",null).show();
+    }
+    private static void atomicCopy(File input,File target) throws IOException {
+        AtomicFile atomic=new AtomicFile(target);FileOutputStream output=null;
+        try(InputStream in=new FileInputStream(input)) {output=atomic.startWrite();copy(in,output);atomic.finishWrite(output);}
+        catch(IOException e) {if(output!=null) atomic.failWrite(output);throw e;}
+    }
+    private String editSnapshot() {
+        if(word==null) return PdfEngine.encode(sheets);
+        try {return new JSONObject().put("pages",PdfEngine.encode(sheets)).put("word",word.editState()).toString();}
+        catch(JSONException e) {throw new IllegalStateException(e);}
+    }
+    private boolean wordPageChanges() {
+        if(sheets.size()!=renderer.getPageCount()) return true;
+        for(int i=0;i<sheets.size();i++) if(sheets.get(i).original!=i||sheets.get(i).rotation!=0) return true;
+        return false;
+    }
+    private void editWordBody() {
+        if(word==null||!editable()) return;
+        boolean marked=wordPageChanges();for(PdfEngine.Sheet sheet:sheets) if(!sheet.marks.isEmpty()) marked=true;
+        if(marked) {error("正文修改会重新分页。请先撤销页面批注和页面调整，再修改正文；已保存的版本可另存后重新打开。这样可避免批注与正文错位。");return;}
+        ArrayList<Integer> indices=word.paragraphsOnPage(sheets.get(current).original);
+        if(indices.isEmpty()) {toast("此页没有可编辑的正文段落");return;}
+        String[] labels=new String[indices.size()];
+        for(int i=0;i<labels.length;i++) {String text=word.text(indices.get(i)).replace('\n',' ');labels[i]=(i+1)+". "+(text.isEmpty()?"（空段落 / 图片所在段落）":text.substring(0,Math.min(90,text.length())));}
+        dialog().setTitle("选择本页段落或表格单元格").setItems(labels,(d,n)->{
+            int index=indices.get(n);EditText input=new EditText(dialogContext());input.setText(word.text(index));input.setGravity(Gravity.TOP);input.setMinLines(5);input.setMaxLines(12);input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+            input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(50000)});
+            dialog().setTitle("编辑 Word 正文").setMessage("修改当前段落文字，换行可增删内容。该段新文字采用首个文字样式，其他段落和附件保留；保存后重新分页。").setView(input)
+                .setPositiveButton("应用修改",(a,b)->{
+                    try {String value=input.getText().toString();if(value.equals(word.text(index))) return;
+                        JSONObject edits=new JSONObject(word.editState());edits.put(Integer.toString(index),value);
+                        rebuildWord(edits.toString(),null,editSnapshot());
+                    } catch(Exception e) {error(friendly(e));}
+                }).setNegativeButton("取消",null).show();
+        }).setNegativeButton("关闭",null).show();
+    }
+    private void rebuildWord(String edits,String pageState,String checkpoint) {
+        if(continuousView!=null) {continuousView.dispose();continuousView=null;}renderGeneration++;
+        task("正在重新排版 Word…",()->{
+            WordEngine next=WordEngine.open(drafts.word(draftId));next.applyEdits(edits);
+            File preview=new File(getCacheDir(),"edited-word-preview.pdf");int count=next.render(preview);
+            ArrayList<PdfEngine.Sheet> nextSheets;
+            if(pageState!=null) {nextSheets=PdfEngine.decode(pageState);for(PdfEngine.Sheet sheet:nextSheets) if(sheet.original<0||sheet.original>=count) throw new IOException("Word 草稿页数不匹配");}
+            else {nextSheets=new ArrayList<>();for(int i=0;i<count;i++) nextSheets.add(new PdfEngine.Sheet(i));}
+            try(PdfRenderer check=new PdfRenderer(ParcelFileDescriptor.open(preview,ParcelFileDescriptor.MODE_READ_ONLY))) {if(check.getPageCount()!=count) throw new IOException("Word 排版验证失败");}
+            closeRenderer();atomicCopy(preview,source);renderer=new PdfRenderer(ParcelFileDescriptor.open(source,ParcelFileDescriptor.MODE_READ_ONLY));
+            word=next;sheets=nextSheets;return true;
+        },ok->{
+            if(checkpoint!=null) {undo.push(checkpoint);if(undo.size()>30) undo.removeLast();redo.clear();}
+            current=Math.min(current,sheets.size()-1);readingFraction=0;saveStatus="编辑中 · 草稿已自动保存";persist();viewer();
+        },()->{if(renderer!=null) viewer();});
+    }
+    private void exportWord(boolean share,boolean overwrite) {
+        if(word==null||!editable()) return;
+        if(wordPageChanges()) {
+            dialog().setTitle("保留页面调整").setMessage("Word 会自行重新分页。当前旋转、删除或调序的页面可保存为 PDF，准确保留排版。若要保存可编辑的 Word，请先撤销这些页面调整。")
+                .setPositiveButton(share?"分享 PDF":"另存 PDF",(d,w)->export(share)).setNegativeButton("返回",null).show();return;
+        }
+        if(overwrite&&legacyWord) {error("旧 DOC 请另存为 DOCX，原文件不会被替换。");return;}
+        if(!share) {saveStatus="正在准备保存 Word…";update();persist();}
+        task("正在生成 Word…",()->{
+            File directory=new File(getCacheDir(),"shared");if(!directory.exists()&&!directory.mkdirs()) throw new IOException("无法创建临时目录");
+            File file=new File(directory,"paper-"+System.currentTimeMillis()+".docx");word.export(file,sheets);return file;
+        },file->{
+            if(overwrite) {pendingOverwrite=file;requestOverwrite();return;}
+            if(share) {
+                Uri uri=Uri.parse("content://cn.paperpdf.reader.share/"+file.getName());Intent intent=new Intent(Intent.ACTION_SEND).setType(DocumentFormats.DOCX).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                intent.setClipData(ClipData.newRawUri("Word",uri));try {startActivity(Intent.createChooser(intent,"分享 Word"));}catch(ActivityNotFoundException e) {error("未找到可接收 Word 的应用");}
+            } else {
+                pendingExport=file;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType(DocumentFormats.DOCX).addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,name.replaceFirst("(?i)\\.(pdf|docx|doc)$","")+"-已编辑.docx");
+                try {startActivityForResult(intent,SAVE);}catch(ActivityNotFoundException e) {pendingExport=null;saveStatus="另存失败 · 草稿仍在";update();persist();error("设备没有可用的系统文件保存器");}
+            }
+        },()->{if(!share) {saveStatus="保存失败 · 草稿仍在";update();persist();}});
     }
     private void export(boolean share) { export(share,false); }
     private void export(boolean share,boolean overwrite) {
@@ -789,7 +895,7 @@ public class MainActivity extends Activity {
             } else {
                 pendingExport=file;
                 Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE)
-                    .putExtra(Intent.EXTRA_TITLE,name.replaceFirst("(?i)\\.pdf$","")+"-已编辑.pdf");
+                    .putExtra(Intent.EXTRA_TITLE,name.replaceFirst("(?i)\\.(pdf|docx|doc)$","")+"-已编辑.pdf");
                 try { startActivityForResult(intent,SAVE); } catch(ActivityNotFoundException e) { pendingExport=null; saveStatus="另存失败 · 草稿仍在"; update(); persist(); error("设备没有可用的系统文件保存器。"); }
             }
         },()->{ if(!share) { saveStatus="保存失败 · 草稿仍在"; update(); persist(); } });
@@ -802,9 +908,9 @@ public class MainActivity extends Activity {
         if(writable) { writeOriginal(uri); return; }
         saveStatus="正在等待原文件授权…"; update(); persist();
         dialog().setTitle("需要原文件写入授权")
-            .setMessage("请在系统文件选择器中重新选择原 PDF：“"+name+"”。只读的微信 / QQ 分享文件可先保存到本地，再用纸阅打开。")
+            .setMessage("请在系统文件选择器中重新选择原文档：“"+name+"”。只读的微信 / QQ 分享文件可先保存到本地，再用纸阅打开。")
             .setPositiveButton("选择原文件",(d,w)->{
-                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/pdf").addCategory(Intent.CATEGORY_OPENABLE)
+                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES,DocumentFormats.TYPES).addCategory(Intent.CATEGORY_OPENABLE)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                 if(Build.VERSION.SDK_INT>=26) intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,uri);
                 try {startActivityForResult(intent,WRITE_ORIGINAL);} catch(ActivityNotFoundException e) {error("未找到系统文件选择器，请另存为 PDF。");}
@@ -815,9 +921,9 @@ public class MainActivity extends Activity {
         File edited=pendingOverwrite; final String snapshot=PdfEngine.encode(sheets);
         saveStatus="正在写入原文件…"; update(); persist();
         task("正在覆盖并校验原文件…",()->{
-            File backup=new File(getFilesDir(),"original-backup-"+System.currentTimeMillis()+".pdf");
+            File backup=new File(getFilesDir(),"original-backup-"+System.currentTimeMillis()+(edited.getName().endsWith(".docx")?".docx":".pdf"));
             OriginalFileWriter.replace(getContentResolver(),uri,edited,backup); return true;
-        },ok->{savedModel=snapshot; pendingOverwrite=null; saveStatus="已写入原文件"; update(); persist(); toast("已写入原文件，草稿与文件一致");},
+        },ok->{savedModel=snapshot; savedWord=word==null?"{}":word.editState(); pendingOverwrite=null; saveStatus="已写入原文件"; update(); persist(); toast("已写入原文件，草稿与文件一致");},
         ()->{saveStatus="写入失败 · 草稿仍在";update();persist();});
     }
     private void keepPermission(Uri uri,Intent data) {
@@ -852,7 +958,9 @@ public class MainActivity extends Activity {
         } else if(request==SAVE&&pendingExport!=null) {
             final File file=pendingExport;
             task("正在保存文件…",()->{ try(InputStream in=new FileInputStream(file);OutputStream out=getContentResolver().openOutputStream(uri,"wt")) { copy(in,out); } return true; },ok->{
-                savedModel=PdfEngine.encode(sheets); pendingExport=null; saveStatus="已另存副本："+fileName(uri); update(); persist(); toast("已另存 PDF，草稿与副本一致");
+                boolean pdfCopy=word!=null&&file.getName().endsWith(".pdf");
+                if(!pdfCopy) {savedModel=PdfEngine.encode(sheets);savedWord=word==null?"{}":word.editState();}
+                pendingExport=null; saveStatus=pdfCopy?"PDF 已导出 · Word 草稿保留":"已另存副本："+fileName(uri); update(); persist(); toast(pdfCopy?"PDF 已导出，Word 修改仍在草稿中":"已另存文档，草稿与副本一致");
             },()->{saveStatus="另存失败 · 草稿仍在";update();persist();});
         }
     }
@@ -881,7 +989,8 @@ public class MainActivity extends Activity {
                 getPreferences(0).edit().putString("positions",positions.toString()).apply();
             }
             JSONObject json=new JSONObject().put("fraction",readingFraction).put("name",name).put("uri",sourceUri).put("pages",PdfEngine.encode(sheets)).put("page",current)
-                .put("saved",savedModel).put("modify",canModify).put("status",saveStatus);
+                .put("saved",savedModel).put("modify",canModify).put("status",saveStatus)
+                .put("word",word!=null).put("legacyWord",legacyWord).put("wordEdits",word==null?"{}":word.editState()).put("savedWord",savedWord);
             drafts.write(draftId,json);
             getPreferences(0).edit().putString("active_draft",draftId).putString("last_draft",draftId).apply();
         } catch(Exception e) { toast("草稿保存失败，请及时另存 PDF"); }
@@ -905,10 +1014,15 @@ public class MainActivity extends Activity {
         if(!drafts.exists(id)) { error("草稿文件已丢失，请重新打开原 PDF。"); return; }
         task("正在恢复文档…",()->{
             JSONObject state=drafts.read(id); File pdf=drafts.pdf(id);
+            WordEngine restored=null;
+            if(state.optBoolean("word")) {
+                restored=WordEngine.open(drafts.word(id));restored.applyEdits(state.optString("wordEdits","{}"));
+                File preview=new File(getCacheDir(),"restore-word.pdf");restored.render(preview);closeRenderer();atomicCopy(preview,pdf);
+            }
             try(PdfRenderer check=new PdfRenderer(ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY))) {
                 if(check.getPageCount()<1) throw new IOException("草稿 PDF 没有页面");
             }
-            closeRenderer(); renderer=new PdfRenderer(ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY)); return state;
+            closeRenderer(); renderer=new PdfRenderer(ParcelFileDescriptor.open(pdf,ParcelFileDescriptor.MODE_READ_ONLY));word=restored;legacyWord=state.optBoolean("legacyWord");savedWord=state.optString("savedWord","{}"); return state;
         },state->{
             try {
                 draftId=id; source=drafts.pdf(id); name=state.getString("name"); sourceUri=state.optString("uri"); sheets=PdfEngine.decode(state.getString("pages"));
