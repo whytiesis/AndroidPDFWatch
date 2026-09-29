@@ -6,7 +6,7 @@
 
 [纸阅 1.6.0 安装包](release-assets/PaperPDF-1.6.0.apk)
 
-1.6.0 本轮交付在本地，尚未上传 GitHub；线上旧版：[1.5.0](https://raw.githubusercontent.com/whytiesis/AndroidPDFWatch/main/release-assets/PaperPDF-1.5.0.apk)。
+旧版安装包：[纸阅 PDF 1.5.0](https://raw.githubusercontent.com/whytiesis/AndroidPDFWatch/main/release-assets/PaperPDF-1.5.0.apk)。
 
 [查看全部历史版本](https://github.com/whytiesis/AndroidPDFWatch/releases)
 
