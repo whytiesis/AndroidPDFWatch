@@ -511,7 +511,7 @@ public class MainActivity extends Activity {
     }
     private int prepare(File stage,String password,File target) throws IOException {
         boolean permission;
-        try(PDDocument doc=PDDocument.load(stage,password==null?"":password)) {
+        try(PDDocument doc=PDDocument.load(stage,password==null?"":password,PdfEngine.memoryUsage(stage))) {
             if(doc.getNumberOfPages()<1) throw new IOException("此 PDF 没有页面");
             permission=doc.getCurrentAccessPermission().canModify();
             if(doc.isEncrypted()) {

@@ -43,6 +43,62 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
         }
         return f;
     }
+    /** A valid two-page PDF with a 600 MiB unused form resource, not padding after EOF. */
+    private File largeFixture() throws Exception {
+        File file=new File(context.getCacheDir(),"large-600mb.pdf");
+        long[] offsets=new long[7];
+        try(RandomAccessFile out=new RandomAccessFile(file,"rw")) {
+            out.setLength(0); out.writeBytes("%PDF-1.4\n");
+            String[] objects={
+                "<< /Type /Catalog /Pages 2 0 R >>",
+                "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 600] /Resources << /XObject << /Large 6 0 R >> >> /Contents 5 0 R >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 600] /Resources << >> /Contents 5 0 R >>",
+                "<< /Length 27 >>\nstream\n0 0 1 rg 50 50 100 100 re f\nendstream"
+            };
+            for(int i=1;i<=5;i++) { offsets[i]=out.getFilePointer(); out.writeBytes(i+" 0 obj\n"+objects[i-1]+"\nendobj\n"); }
+            offsets[6]=out.getFilePointer(); long size=600L*1024*1024;
+            out.writeBytes("6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << >> /Length "+size+" >>\nstream\n");
+            byte[] block=new byte[65536]; Arrays.fill(block,(byte)' ');
+            for(long remaining=size;remaining>0;remaining-=block.length) out.write(block,0,(int)Math.min(block.length,remaining));
+            out.writeBytes("\nendstream\nendobj\n"); long xref=out.getFilePointer();
+            out.writeBytes("xref\n0 7\n0000000000 65535 f \n");
+            for(int i=1;i<=6;i++) out.writeBytes(String.format(Locale.ROOT,"%010d 00000 n \n",offsets[i]));
+            out.writeBytes("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF\n");
+        }
+        return file;
+    }
+    public void test600MbPdfOpensRendersSearchesAndExports() throws Exception {
+        File file=largeFixture(), exported=new File(context.getCacheDir(),"large-export.pdf");
+        MainActivity activity=null;
+        try {
+            assertTrue(file.length()>600L*1024*1024);
+            Intent intent=new Intent(context,MainActivity.class).setAction(Intent.ACTION_VIEW).setDataAndType(Uri.fromFile(file),"application/pdf")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            activity=(MainActivity)getInstrumentation().startActivitySync(intent);
+            MainActivity reader=activity;
+            await(()->!(Boolean)field(reader,"busy"),180000);
+            assertNotNull("600 MiB PDF must open without the out-of-memory dialog",field(reader,"pager"));
+            await(()->field(reader,"displayed")!=null);
+            assertEquals(2,((PdfRenderer)field(reader,"renderer")).getPageCount());
+            Bitmap firstPage=(Bitmap)field(reader,"displayed");
+            getInstrumentation().runOnMainSync(()->find(reader.getWindow().getDecorView(),"下一页").performClick());
+            await(()->(Integer)field(reader,"current")==1&&field(reader,"displayed")!=null&&field(reader,"displayed")!=firstPage&&((View)field(reader,"pageView")).isEnabled());
+            File source=(File)field(reader,"source");
+            ArrayList<PdfEngine.Sheet> pages=new ArrayList<>(); pages.add(new PdfEngine.Sheet(0)); pages.add(new PdfEngine.Sheet(1));
+            assertTrue(PdfEngine.search(source,pages,"absent text").isEmpty());
+            PdfEngine.export(source,pages,exported);
+            try(PdfRenderer renderer=new PdfRenderer(ParcelFileDescriptor.open(exported,ParcelFileDescriptor.MODE_READ_ONLY))) {
+                assertEquals(2,renderer.getPageCount());
+                Bitmap bitmap=PdfEngine.render(renderer,new PdfEngine.Sheet(1),400);
+                assertEquals(Color.BLUE,bitmap.getPixel(100,500)); bitmap.recycle();
+            }
+            screenshot("paper-161-large-pdf");
+        } finally {
+            if(activity!=null) { MainActivity reader=activity; getInstrumentation().runOnMainSync(reader::finish); getInstrumentation().waitForIdleSync(); }
+            file.delete(); exported.delete();
+        }
+    }
     public void testExportMarksOnAllRotationsAndCropOffsets() throws Exception {
         File source=fixture("rotations.pdf",4),out=new File(context.getCacheDir(),"annotated.pdf");
         ArrayList<PdfEngine.Sheet> pages=new ArrayList<>();
@@ -110,7 +166,10 @@ public class PdfIntegrationTest extends InstrumentationTestCase {
     }
     private interface Condition { boolean check(); }
     private void await(Condition condition) throws Exception {
-        long until=System.currentTimeMillis()+30000; boolean[] result={false};
+        await(condition,30000);
+    }
+    private void await(Condition condition,long timeout) throws Exception {
+        long until=System.currentTimeMillis()+timeout; boolean[] result={false};
         while(System.currentTimeMillis()<until&&!result[0]) { getInstrumentation().runOnMainSync(()->result[0]=condition.check()); if(!result[0]) Thread.sleep(100); }
         assertTrue("condition timed out",result[0]);
     }

@@ -8,6 +8,7 @@ import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import com.tom_roush.pdfbox.text.PDFTextStripper;
 import com.tom_roush.pdfbox.util.Matrix;
+import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import org.json.*;
 import java.io.*;
 import java.util.*;
@@ -15,6 +16,10 @@ import java.util.*;
 /** Original PDF stays immutable. Every export is rebuilt from the editable page model. */
 public final class PdfEngine {
     public static final int INK = 1, HIGHLIGHT = 2, TEXT = 3, ERASER = 4, SELECT = 5;
+    /** Bound stream buffers independently of PDF size; overflow lives beside the private working file. */
+    static MemoryUsageSetting memoryUsage(File workingFile) {
+        return MemoryUsageSetting.setupMixed(8L*1024*1024).setTempDir(workingFile.getParentFile());
+    }
     public static class Mark {
         int type, color;
         float width;
@@ -132,7 +137,7 @@ public final class PdfEngine {
         for(Mark m:s.marks) for(PointF p:m.points) { float x=p.x; p.x=1-p.y; p.y=x; }
     }
     public static void export(File source, List<Sheet> sheets, File destination) throws IOException {
-        try(PDDocument doc=PDDocument.load(source); PDDocument out=new PDDocument()) {
+        try(PDDocument doc=PDDocument.load(source,memoryUsage(source)); PDDocument out=new PDDocument(memoryUsage(destination))) {
             if(!doc.getCurrentAccessPermission().canModify()) throw new IOException("此 PDF 不允许修改");
             for(Sheet s:sheets) {
                 PDPage page=out.importPage(doc.getPage(s.original));
@@ -162,7 +167,7 @@ public final class PdfEngine {
     }
     public static ArrayList<Integer> search(File source,List<Sheet> sheets,String query) throws IOException {
         ArrayList<Integer> matches=new ArrayList<>();
-        try(PDDocument doc=PDDocument.load(source)) {
+        try(PDDocument doc=PDDocument.load(source,memoryUsage(source))) {
             if(!doc.getCurrentAccessPermission().canExtractContent()) throw new IOException("此文件不允许提取文字");
             PDFTextStripper stripper=new PDFTextStripper();
             String needle=query.toLowerCase(Locale.ROOT);

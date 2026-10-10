@@ -2,6 +2,12 @@
 
 版本号统一在 `gradle.properties` 的 `appVersionCode`、`appVersionName` 维护。每次发布必须递增 `appVersionCode`，沿用 `.signing/paperpdf.jks` 原签名密钥；`build.ps1` 自动按版本号命名交付 APK。旧版本安装包保留在 `delivery`。
 
+## 1.6.1（versionCode 8，2026-10-10）
+
+- 修复约 600 MB PDF 打开时因 PDFBox 默认无限内存数据流缓存导致的内存不足；打开、解密、搜索和导出的数据流缓存改为每个文档最多 8 MiB 内存，超出部分使用私有磁盘临时文件。PDF 无固定文件大小上限。
+- 新增 600 MiB 有效 PDF 数据流集成测试，覆盖实际打开、渲染、翻页、搜索与导出；旧版复现 OutOfMemoryError，修复后通过。
+- 沿用原包名与发布签名，递增至 code 8；保留 1.6.0 和更早安装包。实际可处理文档仍受本地存储、页面复杂度与设备资源限制。
+
 ## 1.6.0（versionCode 7，2026-09-29）
 
 - 应用更名“纸阅”，保留原包名和签名，可覆盖升级；旧 APK 保留。
