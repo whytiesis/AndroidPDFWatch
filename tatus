@@ -1,0 +1,74 @@
+[33mcommit c84f3a9da3f9c66bd749a10cc737aede2002fa0c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: whytiesis <wangheyi159632@163.com>
+Date:   Sat Oct 10 13:12:53 2026 +0800
+
+    修复内存不足导致大型文件打不开的问题，并发布1.6.1版本apk
+
+[33mcommit fa16f58e2fc487590d6e6e5e1487b3fa7f332e76[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Merge: 77f71dc 6aadc14
+Author: whytiesis <wangheyi159632@163.com>
+Date:   Tue Sep 29 23:08:49 2026 +0800
+
+    Merge remote updates before publishing 1.6.0
+
+[33mcommit 77f71dc37ad12a7d9e6ca818da10212bfcbb455a[m
+Author: whytiesis <wangheyi159632@163.com>
+Date:   Tue Sep 29 22:53:52 2026 +0800
+
+    Add Word support and release Paper 1.6.0
+
+[33mcommit 6aadc1471e330afbb61bd08961f868c9bdbb6292[m
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Sat Sep 19 17:30:00 2026 +0800
+
+    修复 1.5 下载链接
+
+[33mcommit dffb75a44ffec92d27892d3d863a54f76c48e919[m
+Merge: f709a13 142424f
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Sat Sep 19 17:24:52 2026 +0800
+
+    Merge branch 'main' of https://github.com/whytiesis/AndroidPDFWatch
+
+[33mcommit f709a13bb31d39a98001e385cff5a6780ad26cda[m
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Sat Sep 19 16:31:32 2026 +0800
+
+    1.5
+
+[33mcommit 142424f46449e41868517aee47c8bdd262953036[m
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Sat Sep 19 16:31:32 2026 +0800
+
+    1.5
+
+[33mcommit dc104555f23fc70025594d7a2bd6e2acc05f161e[m
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Wed Sep 16 14:31:14 2026 +0800
+
+    Add APK download links
+
+[33mcommit 9e3a85772c22eaa96cff0bab275710c5d36fdd82[m[33m ([m[1;33mtag: [m[1;33mv1.4.0[m[33m, [m[1;33mtag: [m[1;33mv1.3.0[m[33m, [m[1;33mtag: [m[1;33mv1.2.0[m[33m, [m[1;33mtag: [m[1;33mv1.1.0[m[33m, [m[1;33mtag: [m[1;33mv1.0.0[m[33m)[m
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Wed Sep 16 14:24:01 2026 +0800
+
+    Import sanitized Android project source
+
+[33mcommit a7e0b9510770244e168015c608872840ad58b939[m
+Merge: 3ec2368 0f06a98
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Wed Sep 16 14:03:52 2026 +0800
+
+    Merge existing GitHub repository
+
+[33mcommit 3ec236814f2fb9ba1a1a591ac7f0d47bfc122abb[m
+Author: whytiesis <291278394+whytiesis@users.noreply.github.com>
+Date:   Wed Sep 16 14:02:42 2026 +0800
+
+    Initial commit
+
+[33mcommit 0f06a9894f12f397f9ef1614402e58c5113d84ec[m
+Author: whytiesis <wangheyi159632@163.com>
+Date:   Wed Sep 16 13:48:54 2026 +0800
+
+    Initial commit

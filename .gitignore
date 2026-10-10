@@ -18,7 +18,17 @@ Thumbs.db
 *.jks
 *.keystore
 *.p12
+*.pfx
+*.key
+*.jceks
 *.pem
+keystore.properties
+key.properties
+release.properties
+.git-credentials
+.netrc
+credentials.json
+service-account*.json
 .env
 .env.*
 

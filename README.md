@@ -1,14 +1,22 @@
 # 纸阅
 
-原生 Android 本地 PDF / Word 阅读、批注与正文编辑应用，包名 `cn.paperpdf.reader`。
+原生 Android 本地 PDF / Word 阅读、批注与正文编辑应用。当前版本 **1.6.1**，包名 `cn.paperpdf.reader`，支持 Android 6.0 及以上。
 
 ## 下载
 
-[纸阅 1.6.1 安装包](release-assets/PaperPDF-1.6.1.apk)
+[下载纸阅 1.6.1 APK](https://github.com/whytiesis/AndroidPDFWatch/releases/download/v1.6.1/PaperPDF-1.6.1.apk) · [发行说明](https://github.com/whytiesis/AndroidPDFWatch/releases/tag/v1.6.1) · [仓库备用安装包](release-assets/PaperPDF-1.6.1.apk)
 
-旧版安装包：[纸阅 PDF 1.5.0](https://raw.githubusercontent.com/whytiesis/AndroidPDFWatch/main/release-assets/PaperPDF-1.5.0.apk)。
+旧版发行：[纸阅 1.6.0](https://github.com/whytiesis/AndroidPDFWatch/releases/tag/v1.6.0)、[纸阅 PDF 1.5.0](https://github.com/whytiesis/AndroidPDFWatch/releases/tag/v1.5.0)。
 
 [查看全部历史版本](https://github.com/whytiesis/AndroidPDFWatch/releases)
+
+## 1.6.1 更新
+
+- 修复大 PDF 打开时因数据流缓存耗尽内存的问题；打开、搜索和导出采用有限内存与磁盘缓存。
+- 保留 PDF / Word 阅读、批注、DOCX 正文与表格文字编辑、独立草稿及保存能力。
+- 34 项专用模拟器集成测试通过，含 600 MiB 合成 PDF 打开、渲染、翻页、搜索和导出；沿用原正式版签名，可覆盖升级。
+
+安装包大小：11,967,754 bytes。SHA-256：`3279582A1473F91E2D96D0EE57C8237BB07C3A87365A0899FF4D20AD5DFD637F`。历史正式安装包的校验值见 [SHA256SUMS](release-assets/SHA256SUMS.txt)。
 
 ## 安装与使用
 
@@ -51,11 +59,23 @@ Android 11 及以上不能授权其他应用的 `Android/data` 私有目录，�
 
 使用 JDK 17、Gradle 8.11.1、Android Gradle Plugin 8.9.2、Android SDK 35 / Build Tools 35.0.0；PDFBox-Android 2.0.27.0。
 
-已在本项目 `.tools` 安装工具链。PowerShell 执行 `./build.ps1` 构建 release APK；`./build.ps1 -Test` 另执行已连接安卓设备上的集成测试。版本号在 `gradle.properties` 统一维护，变更记录见 `CHANGELOG.md`。签名密钥在 `.signing/paperpdf.jks`，签名参数保存在被忽略的 `.signing/release.properties`，也可通过 `PAPERPDF_KEYSTORE_PASSWORD`、`PAPERPDF_KEY_ALIAS`、`PAPERPDF_KEY_PASSWORD` 环境变量提供。密钥、签名参数和工具缓存不进入源码版本控制。
+克隆仓库后，先安装 JDK 17 和 Android SDK，设置 `JAVA_HOME`、`ANDROID_HOME`，并安装 SDK Platform 35 / Build Tools 35.0.0。Windows 可用 Gradle Wrapper 构建供开发使用的 debug APK：
 
-集成测试位于 `app/src/androidTest`，在安卓系统内验证 PDF 与 Word 阅读、编辑、导出和草稿恢复。1.6.0 摘要见[发布记录](docs/release-1.6.0.md)；本机详细结果保存在 `delivery/PaperPDF-1.6.0-验证记录.md`。
+```powershell
+.\gradlew.bat assembleDebug
+```
 
-实体手机验证：[基础验证包](delivery/PaperPDF-1.3.0-device-kit/README-安装与验收.md)、[1.4.0 显隐与旋转验收](delivery/PaperPDF-1.4.0-实机验收补充.md)、[1.5.0 草稿/导入/批注验收](delivery/PaperPDF-1.5.0-实机验收补充.md)。模拟器通过不能替代品牌手机、旋转传感器、微信/QQ 和具体文件提供方实测。
+输出位于 `app/build/outputs/apk/debug/app-debug.apk`。debug 使用开发签名，不能直接覆盖已安装的正式版。
+
+正式版构建命令为 `./gradlew.bat assembleRelease`，需要先配置自己的签名密钥与参数。项目发布密钥保存在本机 `.signing/paperpdf.jks`，参数从被忽略的 `.signing/release.properties` 或 `PAPERPDF_KEYSTORE_PASSWORD`、`PAPERPDF_KEY_ALIAS`、`PAPERPDF_KEY_PASSWORD` 环境变量读取。原发布密钥不随仓库提供；只有沿用原密钥的正式版才能覆盖升级现有纸阅。
+
+`build.ps1` 是本地工具链辅助脚本，需要 `.tools` 中的 JDK 17、Gradle 8.11.1 和 Android SDK；这些工具不随 Git 仓库上传。配置好工具和签名后，PowerShell 执行 `./build.ps1` 构建并验证正式版，`./build.ps1 -Test` 还会运行集成测试。集成测试会清理测试应用的数据，只在专用模拟器或可清理的测试设备上运行。版本号在 `gradle.properties` 维护，变更记录见 [CHANGELOG](CHANGELOG.md)。
+
+集成测试位于 `app/src/androidTest`，在安卓系统内验证 PDF 与 Word 阅读、编辑、导出和草稿恢复。[1.6.1 发布记录](docs/release-1.6.1.md)包含 34 项模拟器集成测试摘要；[1.6.0 发布记录](docs/release-1.6.0.md)保留 Word 功能验证摘要。
+
+实体手机验证时，请检查打开文档、双指缩放、翻页/连续滚动、显隐工具栏、横竖屏、批注、草稿恢复和保存。模拟器通过不能替代品牌手机、旋转传感器、微信/QQ 和具体文件提供方实测。本地验收包与详细日志不随源码仓库上传。
+
+公开仓库的数据范围与隐私说明见 [仓库隐私说明](docs/repository-privacy.md)。
 
 ## 依赖与技术资料
 

@@ -2,3 +2,6 @@
 gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
+*.apk binary
+*.doc binary
+*.docx binary
